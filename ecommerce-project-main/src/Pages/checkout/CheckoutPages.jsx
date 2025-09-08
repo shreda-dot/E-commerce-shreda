@@ -1,6 +1,6 @@
 import React from "react";
 import "./CheckOutPage.css";
-import "./CheckOut-header.css";
+import "./checkOut-header.css";
 import { Link } from "react-router";
 import axios from "axios";
 import OrderSummary from "./OrderSummary"
