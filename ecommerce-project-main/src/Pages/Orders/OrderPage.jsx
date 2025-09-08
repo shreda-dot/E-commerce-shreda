@@ -1,6 +1,6 @@
 import React from "react";
 import axios from "axios";
-import "./Orders.css";
+import "./orders.css";
 import Header from "../../Component/Header";
 import OrderDetailsGrid from "./OrderDetailsGrid";
 import OrderLeftSection from "./OrderLeftSection";
