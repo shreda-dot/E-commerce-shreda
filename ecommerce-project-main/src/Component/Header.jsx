@@ -54,7 +54,7 @@ const Header = ({cart}) => {
           onKeyDown={HandleClickButton}
           value={SearchBar}
            onChange={(e) => setSearchBar(e.target.value)}
-            className="search-bar bg-white text-dark"
+            className="search-bar bg-white text-dark flex-grow px-3 py-2 border border-gray-300 rounded-l-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             type="text"
             placeholder="Search"
           />
