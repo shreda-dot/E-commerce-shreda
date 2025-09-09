@@ -138,8 +138,8 @@ const HomePage = ({ cart, LoadCart }) => {
        {/* Floating Reset Button */}
         <button
           onClick={handleReset}
-          // className="fixed bottom-8 right-8 bg-pink-600 hover:bg-pink-700 text-white font-bold p-5 rounded-full shadow-2xl transition-all duration-300 transform hover:scale-110 focus:outline-none focus:ring-4 focus:ring-500 focus:ring-opacity-50 flex items-center justify-center gap-2 z-50"
-          className="fixed bottom-8 right-8 bg-pink-600 text-white p-r rounded-full font-bold hover:bg-pink-700"
+          className="fixed bottom-8 right-8 bg-pink-600 hover:bg-pink-700 text-white font-bold p-5 rounded-full shadow-2xl transition-all duration-300 transform hover:scale-110 focus:outline-none focus:ring-4 focus:ring-500 focus:ring-opacity-50 flex items-center justify-center gap-2 z-50"
+          // className="fixed bottom-8 right-8 bg-pink-600 text-white p-r rounded-full font-bold hover:bg-pink-700"
         >
           <RefreshCw size={24} />
         </button>
