@@ -148,7 +148,7 @@ const HomePage = ({ cart, LoadCart }) => {
        {showConfirm && (
           <div className="fixed inset-0 bg-slate-900 bg-opacity-75 flex items-center justify-center z-[100]">
             <div className="bg-slate-800 p-8 rounded-2xl shadow-xl border border-slate-700 max-w-md w-full text-center">
-              <h3 className="text-3xl font-bold mb-4">Reset Data?</h3>
+              <h3 className="text-3xl font-bold mb-4 text-white">Reset Data?</h3>
               <p className="text-slate-400 mb-6">
                 Are you sure you want to reset all data? This will clear the products, Cart, and Orders.
               </p>
