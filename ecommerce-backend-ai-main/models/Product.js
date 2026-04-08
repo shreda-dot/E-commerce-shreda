@@ -23,6 +23,11 @@ export const Product = sequelize.define('Product', {
     type: DataTypes.INTEGER,
     allowNull: false
   },
+  stock: {
+    type: DataTypes.INTEGER,
+    defaultValue: 10,
+    allowNull: false
+  },
   keywords: {
     type: DataTypes.STRING,
     allowNull: false,

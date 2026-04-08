@@ -16,8 +16,12 @@
   "description": "",
   "dependencies": {
     "cors": "^2.8.5",
+    "dotenv": "^17.4.1",
     "express": "^4.21.2",
+    "google-auth-library": "^10.6.2",
+    "multer": "^2.1.1",
     "mysql2": "^3.14.1",
+    "nodemailer": "^8.0.5",
     "patch-package": "8.0.0",
     "pg": "^8.16.0",
     "sequelize": "^6.6.5",

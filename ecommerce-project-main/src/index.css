@@ -1,10 +1,69 @@
 @import "tailwindcss";
+:root {
+  --bg-app: #f5f7fb;
+  --surface-default: #ffffff;
+  --surface-elevated: rgba(255, 255, 255, 0.88);
+  --surface-muted: #f2f4f8;
+  --text-strong: #12172a;
+  --text-default: #252a3d;
+  --text-muted: #5d647b;
+  --brand-primary: #007c91;
+  --brand-primary-hover: #006979;
+  --brand-accent: #ff7a1a;
+  --brand-accent-deep: #ff5f2e;
+  --border-subtle: #d9deea;
+  --success: #159f65;
+  --shadow-soft: 0 8px 24px rgba(16, 24, 40, 0.08);
+}
+
+[data-theme="dark"] {
+  --bg-app: #0d1220;
+  --surface-default: #131a2c;
+  --surface-elevated: rgba(19, 26, 44, 0.88);
+  --surface-muted: #1b243b;
+  --text-strong: #f5f7ff;
+  --text-default: #dbe2f5;
+  --text-muted: #99a5c7;
+  --brand-primary: #2ab7ca;
+  --brand-primary-hover: #1fa4b7;
+  --brand-accent: #ff9a4d;
+  --brand-accent-deep: #ff7b47;
+  --border-subtle: #2c3550;
+  --success: #39c685;
+  --shadow-soft: 0 10px 28px rgba(0, 0, 0, 0.35);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
 body {
-  font-family: Roboto, Arial;
-  color: rgb(33, 33, 33);
-  /* The <body> element has a default margin of 8px
-     on all sides. This removes the default margins. */
+  font-family: "Inter", "Segoe UI", Arial, sans-serif;
+  color: var(--text-default);
+  background: radial-gradient(circle at top right, rgba(0, 124, 145, 0.12), transparent 40%), var(--bg-app);
   margin: 0;
+  transition: background-color 220ms ease, color 220ms ease;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-app);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 10px;
+  border: 3px solid var(--bg-app);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
 }
 
 /* Remove the default margins of <p> elements. */
@@ -26,16 +85,16 @@ input, select, button {
 }
 
 .button-primary {
-  color: rgb(255, 255, 255);
-  background-color: rgb(25, 135, 84);
+  color: #fff;
+  background-color: var(--brand-primary);
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: 8px;
   cursor: pointer;
-  box-shadow: 0 2px 5px rgba(220, 220, 220, 0.5);
+  box-shadow: var(--shadow-soft);
 }
 
 .button-primary:hover {
-  background-color: rgba(25, 135, 84, 0.75);
+  background-color: var(--brand-primary-hover);
   border: 1px solid transparent;
 }
 
@@ -46,12 +105,12 @@ input, select, button {
 }
 
 .button-secondary {
-  color: rgb(33, 33, 33);
-  background: white;
-  border: 1px solid rgb(200, 200, 200);
-  border-radius: 5px;
+  color: var(--text-default);
+  background: var(--surface-default);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
   cursor: pointer;
-  box-shadow: 0 2px 5px rgba(220, 220, 220, 0.2);
+  box-shadow: var(--shadow-soft);
 }
 
 .button-secondary:hover {
@@ -59,7 +118,7 @@ input, select, button {
 }
 
 .button-secondary:active {
-  background-color: rgb(240, 240, 240);
+  background-color: var(--surface-muted);
   box-shadow: none;
 }
 
@@ -76,7 +135,7 @@ input, select, button {
 }
 
 .link-primary {
-  color: rgb(25, 135, 84);
+  color: var(--brand-primary);
   cursor: pointer;
 }
 
@@ -90,17 +149,17 @@ input, select, button {
 
 /* Styles for dropdown selectors. */
 select {
-  color: rgb(33, 33, 33);
-  background-color: rgb(255, 255, 255);
-  border: 1px solid rgb(200, 200, 200);
-  border-radius: 5px;
+  color: var(--text-default);
+  background-color: var(--surface-default);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
   padding: 3px 5px;
   font-size: 15px;
   cursor: pointer;
-  box-shadow: 0 1px 3px rgba(200, 200, 200, 0.2);
+  box-shadow: var(--shadow-soft);
 }
 
 select:focus,
 input:focus {
-  outline: 2px solid rgb(25, 135, 84);
+  outline: 2px solid var(--brand-primary);
 }
