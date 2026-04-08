@@ -30,6 +30,10 @@ export const Order = sequelize.define(
       defaultValue: "pending",
       allowNull: false,
     },
+    paypalOrderId: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
     createdAt: {
       type: DataTypes.DATE(3),
     },

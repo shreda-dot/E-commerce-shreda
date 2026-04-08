@@ -25,6 +25,7 @@ import {
   MenuItem,
   Paper,
   Select,
+  Snackbar,
   Stack,
   Tab,
   Table,
@@ -42,13 +43,12 @@ import {
   Add as AddIcon,
   Dashboard as DashboardIcon,
   Delete as DeleteIcon,
+  DeleteOutlined as DeleteOutlineIcon,
   Edit as EditIcon,
   Inventory as InventoryIcon,
   People as PeopleIcon,
   ShoppingBasket as OrderIcon,
   Save as SaveIcon,
-  Close as CancelIcon,
-  TrendingUp as TrendingUpIcon,
   AttachMoney as RevenueIcon,
 } from "@mui/icons-material";
 import { useEffect, useState, useCallback, useMemo } from "react";
@@ -81,10 +81,11 @@ export default function AdminPage() {
     "dashboard" | "users" | "products" | "orders"
   >("dashboard");
   const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState<{
-    text: string;
-    severity: "success" | "error";
-  } | null>(null);
+  const [notification, setNotification] = useState<{
+    open: boolean;
+    message: string;
+    severity: "success" | "error" | "info";
+  }>({ open: false, message: "", severity: "info" });
   const [errorDetail, setErrorDetail] = useState<string>("");
 
   // Data states
@@ -105,6 +106,14 @@ export default function AdminPage() {
     password: "",
     role: "customer" as UserRole,
   });
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [pendingDeleteUserId, setPendingDeleteUserId] = useState<string | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    onConfirm: null | (() => Promise<void>);
+  }>({ open: false, title: "", message: "", onConfirm: null });
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -131,8 +140,9 @@ export default function AdminPage() {
           .map((f) => getErrorMessage((f as PromiseRejectedResult).reason, "Unknown error"))
           .join(", ");
         setErrorDetail(errorMsg);
-        setMessage({
-          text: "Some admin data failed to load.",
+        setNotification({
+          open: true,
+          message: "Some admin data failed to load.",
           severity: "error",
         });
       }
@@ -149,15 +159,23 @@ export default function AdminPage() {
     }
   }, [user, fetchData]);
 
+  useEffect(() => {
+    if (!notification.open) return;
+    const timer = window.setTimeout(
+      () => setNotification((prev) => ({ ...prev, open: false, message: "" })),
+      5000,
+    );
+    return () => window.clearTimeout(timer);
+  }, [notification.open]);
+
   if (!user) return <Navigate to="/auth" replace />;
   if (user.role !== "admin") return <Navigate to="/" replace />;
 
   const handleMessage = (
     text: string,
-    severity: "success" | "error" = "success",
+    severity: "success" | "error" | "info" = "success",
   ) => {
-    setMessage({ text, severity });
-    setTimeout(() => setMessage(null), 3000);
+    setNotification({ open: true, message: text, severity });
   };
 
   // --- Product Handlers ---
@@ -183,15 +201,20 @@ export default function AdminPage() {
   };
 
   const deleteProduct = async (id: string) => {
-    if (!window.confirm("Are you sure you want to delete this product?"))
-      return;
-    try {
-      await api.delete(`/api/products/${id}`);
-      handleMessage("Product deleted.");
-      fetchData();
-    } catch (err) {
-      handleMessage("Error deleting product.", "error");
-    }
+    setConfirmDialog({
+      open: true,
+      title: "Delete Product",
+      message: "Are you sure you want to permanently delete this product? This action cannot be undone.",
+      onConfirm: async () => {
+        try {
+          await api.delete(`/api/products/${id}`);
+          handleMessage("Product deleted.");
+          await fetchData();
+        } catch {
+          handleMessage("Error deleting product.", "error");
+        }
+      },
+    });
   };
 
   // --- Order Handlers ---
@@ -209,14 +232,20 @@ export default function AdminPage() {
   };
 
   const deleteOrder = async (orderId: string) => {
-    if (!window.confirm("Are you sure you want to delete this order?")) return;
-    try {
-      await api.delete(`/api/orders/${orderId}`);
-      handleMessage("Order deleted.");
-      fetchData();
-    } catch (err) {
-      handleMessage("Error deleting order.", "error");
-    }
+    setConfirmDialog({
+      open: true,
+      title: "Delete Order",
+      message: "Are you sure you want to permanently delete this order? This action cannot be undone.",
+      onConfirm: async () => {
+        try {
+          await api.delete(`/api/orders/${orderId}`);
+          handleMessage("Order deleted.");
+          await fetchData();
+        } catch {
+          handleMessage("Error deleting order.", "error");
+        }
+      },
+    });
   };
 
   // --- User Handlers ---
@@ -254,16 +283,25 @@ export default function AdminPage() {
     }
   };
 
-  const repairDatabase = async () => {
+  const openDeleteDialog = (userId: string) => {
+    setPendingDeleteUserId(userId);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteUser = async () => {
+    if (!pendingDeleteUserId || user?.role !== "admin") return;
     try {
-      setLoading(true);
-      await api.post("/api/admin/repair-db");
-      handleMessage("Database schema repaired.");
-      fetchData();
-    } catch (err) {
-      handleMessage("Repair failed.", "error");
-    } finally {
-      setLoading(false);
+      const response = await api.delete(`/api/users/${pendingDeleteUserId}`);
+      if (response.status >= 200 && response.status < 300) {
+        setUsers((prev) => prev.filter((listedUser) => listedUser.id !== pendingDeleteUserId));
+        setDeleteDialogOpen(false);
+        setPendingDeleteUserId(null);
+        handleMessage("User deleted successfully", "success");
+      }
+    } catch (error: unknown) {
+      handleMessage(getErrorMessage(error, "Unable to delete user."), "error");
+      setDeleteDialogOpen(false);
+      setPendingDeleteUserId(null);
     }
   };
 
@@ -302,30 +340,6 @@ export default function AdminPage() {
               : ""}
         </Button>
       </Stack>
-
-      {message && (
-        <Alert
-          severity={message.severity}
-          sx={{ mb: 3, borderRadius: 2 }}
-          action={
-            message.severity === "error" && (
-              <Button color="inherit" size="small" onClick={repairDatabase}>
-                Repair DB
-              </Button>
-            )
-          }
-        >
-          {message.text}
-          {errorDetail && (
-            <Typography
-              variant="caption"
-              sx={{ display: "block", mt: 1, opacity: 0.8 }}
-            >
-              Details: {errorDetail}
-            </Typography>
-          )}
-        </Alert>
-      )}
 
       <Paper sx={{ mb: 4, borderRadius: 4, overflow: "hidden", boxShadow: 6 }}>
         <Tabs
@@ -679,17 +693,27 @@ export default function AdminPage() {
                     </Select>
                   </TableCell>
                   <TableCell align="right">
-                    {u.id !== user.id && (
-                      <Tooltip title="Change Role">
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          onClick={() => toggleUserRole(u.id, u.role)}
-                          sx={{ borderRadius: 2 }}
-                        >
-                          To {u.role === "admin" ? "Customer" : "Admin"}
-                        </Button>
-                      </Tooltip>
+                    {u.id !== user.id && user.role === "admin" && (
+                      <Stack direction="row" spacing={1} sx={{ justifyContent: "flex-end" }}>
+                        <Tooltip title="Change Role">
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            onClick={() => toggleUserRole(u.id, u.role)}
+                            sx={{ borderRadius: 2 }}
+                          >
+                            To {u.role === "admin" ? "Customer" : "Admin"}
+                          </Button>
+                        </Tooltip>
+                        <Tooltip title="Delete User">
+                          <IconButton
+                            onClick={() => openDeleteDialog(u.id)}
+                            sx={{ color: "error.main" }}
+                          >
+                            <DeleteOutlineIcon />
+                          </IconButton>
+                        </Tooltip>
+                      </Stack>
                     )}
                   </TableCell>
                 </TableRow>
@@ -705,6 +729,7 @@ export default function AdminPage() {
         onClose={() => setIsDialogOpen(false)}
         fullWidth
         maxWidth="sm"
+        slotProps={{ paper: { sx: { borderRadius: 2 } } }}
       >
         <DialogTitle sx={{ fontWeight: 800 }}>
           {editingProduct?.id ? "Edit Product" : "Add New Product"}
@@ -791,6 +816,7 @@ export default function AdminPage() {
         onClose={() => setIsUserDialogOpen(false)}
         fullWidth
         maxWidth="sm"
+        slotProps={{ paper: { sx: { borderRadius: 2 } } }}
       >
         <DialogTitle sx={{ fontWeight: 800 }}>Create New User</DialogTitle>
         <form onSubmit={handleCreateUser}>
@@ -855,6 +881,76 @@ export default function AdminPage() {
           </DialogActions>
         </form>
       </Dialog>
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={() => {
+          setDeleteDialogOpen(false);
+          setPendingDeleteUserId(null);
+        }}
+        slotProps={{ paper: { sx: { borderRadius: 2 } } }}
+      >
+        <DialogTitle sx={{ fontWeight: 800 }}>Delete User</DialogTitle>
+        <DialogContent>
+          Are you sure you want to permanently delete this user? This action cannot be undone.
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => {
+              setDeleteDialogOpen(false);
+              setPendingDeleteUserId(null);
+            }}
+          >
+            Cancel
+          </Button>
+          <Button onClick={handleDeleteUser} sx={{ color: "error.main" }} startIcon={<DeleteOutlineIcon />}>
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog
+        open={confirmDialog.open}
+        onClose={() => setConfirmDialog({ open: false, title: "", message: "", onConfirm: null })}
+        slotProps={{ paper: { sx: { borderRadius: 2 } } }}
+      >
+        <DialogTitle sx={{ fontWeight: 800, fontFamily: '"Inter", "Roboto", sans-serif' }}>
+          {confirmDialog.title}
+        </DialogTitle>
+        <DialogContent sx={{ fontFamily: '"Inter", "Roboto", sans-serif' }}>
+          {confirmDialog.message}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmDialog({ open: false, title: "", message: "", onConfirm: null })}>
+            Cancel
+          </Button>
+          <Button
+            color="error"
+            onClick={async () => {
+              if (confirmDialog.onConfirm) {
+                await confirmDialog.onConfirm();
+              }
+              setConfirmDialog({ open: false, title: "", message: "", onConfirm: null });
+            }}
+          >
+            Confirm
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Snackbar
+        open={notification.open}
+        autoHideDuration={5000}
+        onClose={() => setNotification((prev) => ({ ...prev, open: false }))}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          severity={notification.severity}
+          variant="filled"
+          onClose={() => setNotification((prev) => ({ ...prev, open: false }))}
+          sx={{ width: "100%", borderRadius: 2, fontFamily: '"Inter", "Roboto", sans-serif' }}
+        >
+          {notification.message}
+          {errorDetail && notification.severity === "error" ? ` (${errorDetail})` : ""}
+        </Alert>
+      </Snackbar>
     </Container>
   );
 }

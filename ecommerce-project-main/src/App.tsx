@@ -22,6 +22,23 @@ import AdminPage from "./Pages/AdminPage";
 import AccountPage from "./Pages/AccountPage";
 import RealisticLoader from "./components/RealisticLoader";
 
+const GUEST_CART_KEY = "shreda_guest_cart_v1";
+
+const readGuestCart = (): CartItem[] => {
+  try {
+    const raw = localStorage.getItem(GUEST_CART_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as CartItem[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeGuestCart = (items: CartItem[]) => {
+  localStorage.setItem(GUEST_CART_KEY, JSON.stringify(items));
+};
+
 function AppContent() {
   const { user, logout, loading: authLoading } = useAuth();
   const [mode, setMode] = useState<"light" | "dark">("light");
@@ -37,10 +54,12 @@ function AppContent() {
   );
 
   const loadCart = async () => {
+    if (!user) {
+      setCartItems(readGuestCart());
+      return;
+    }
     try {
-      const response = await api.get<CartItem[]>(
-        "/api/cart-items?expand=product",
-      );
+      const response = await api.get<CartItem[]>("/api/cart-items?expand=product");
       setCartItems(response.data);
     } catch {
       setCartItems([]);
@@ -51,7 +70,28 @@ function AppContent() {
     if (!authLoading) {
       loadCart();
     }
-  }, [authLoading]);
+  }, [authLoading, user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const syncGuestCartToServer = async () => {
+      const guestItems = readGuestCart();
+      if (guestItems.length === 0) return;
+      try {
+        for (const item of guestItems) {
+          await api.post("/api/cart-items", {
+            productId: item.productId,
+            quantity: item.quantity,
+          });
+        }
+        writeGuestCart([]);
+        await loadCart();
+      } catch {
+        // keep guest cart if sync fails
+      }
+    };
+    void syncGuestCartToServer();
+  }, [user]);
 
   useEffect(() => {
     if (user && previousUserIdRef.current !== user.id) {
@@ -97,12 +137,22 @@ function AppContent() {
         <Routes>
           <Route
             path="/"
-            element={<ShopPage onCartChanged={loadCart} search={search} />}
+            element={
+              <ShopPage
+                onCartChanged={loadCart}
+                search={search}
+                isAuthenticated={Boolean(user)}
+              />
+            }
           />
           <Route
             path="/cart"
             element={
-              <CartPage cartItems={cartItems} onCartChanged={loadCart} />
+              <CartPage
+                cartItems={cartItems}
+                onCartChanged={loadCart}
+                isAuthenticated={Boolean(user)}
+              />
             }
           />
           <Route
@@ -117,14 +167,15 @@ function AppContent() {
       </AppShell>
       <Snackbar
         open={welcomeOpen}
-        autoHideDuration={3000}
+        autoHideDuration={5000}
         onClose={() => setWelcomeOpen(false)}
-        anchorOrigin={{ vertical: "top", horizontal: "right" }}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       >
         <Alert
           severity="success"
           variant="filled"
           onClose={() => setWelcomeOpen(false)}
+          sx={{ borderRadius: 2, fontFamily: '"Inter", "Roboto", sans-serif' }}
         >
           {user
             ? user.role === "admin"
@@ -139,19 +190,28 @@ function AppContent() {
 
 export default function App() {
   const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+  const rawPaypalId = import.meta.env.VITE_PAYPAL_CLIENT_ID;
+  const isPlaceholder = !rawPaypalId || rawPaypalId.startsWith('YOUR_');
+  const paypalClientId = isPlaceholder ? 'test' : rawPaypalId;
+  if (isPlaceholder) {
+    console.warn('[PayPal] VITE_PAYPAL_CLIENT_ID is not set — using "test" (sandbox only). Replace it in ecommerce-project-main/.env with your real Sandbox Client ID from developer.paypal.com.');
+  }
+
   const content = (
     <AuthProvider>
       <AppContent />
     </AuthProvider>
   );
 
-  if (!googleClientId) {
-    return content;
-  }
+  const withGoogle = googleClientId ? (
+    <GoogleOAuthProvider clientId={googleClientId}>{content}</GoogleOAuthProvider>
+  ) : (
+    content
+  );
 
   return (
-    <GoogleOAuthProvider clientId={googleClientId}>
-      {content}
-    </GoogleOAuthProvider>
+    <PayPalScriptProvider options={{ clientId: paypalClientId, currency: "USD" }}>
+      {withGoogle}
+    </PayPalScriptProvider>
   );
 }

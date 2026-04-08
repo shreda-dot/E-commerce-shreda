@@ -13,6 +13,7 @@ import paymentSummaryRoutes from "./routes/paymentSummary.js";
 import authRoutes from "./routes/auth.js";
 import adminRoutes from "./routes/admin.js";
 import healthRoutes from "./routes/health.js";
+import userRoutes from "./routes/users.js";
 import { Product } from "./models/Product.js";
 import { DeliveryOption } from "./models/DeliveryOption.js";
 import { CartItem } from "./models/CartItem.js";
@@ -53,6 +54,7 @@ app.use("/api/payment-summary", paymentSummaryRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/health", healthRoutes);
+app.use("/api/users", userRoutes);
 
 app.use("/api/*", (req, res) => {
   return res
@@ -82,7 +84,15 @@ app.use((err, req, res, next) => {
 /* eslint-enable no-unused-vars */
 
 // Sync database and load default data if none exist
+// SQLite doesn't support ALTER TABLE with active FK constraints, so we
+// temporarily disable them during sync to prevent SequelizeDatabaseError.
+if (sequelize.getDialect() === 'sqlite') {
+  await sequelize.query('PRAGMA foreign_keys = OFF;');
+}
 await sequelize.sync({ alter: true });
+if (sequelize.getDialect() === 'sqlite') {
+  await sequelize.query('PRAGMA foreign_keys = ON;');
+}
 
 const productCount = await Product.count();
 if (productCount === 0) {

@@ -11,69 +11,173 @@ import {
   Typography,
   Box,
   Divider,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Grid,
   Paper,
-} from '@mui/material';
+  Snackbar,
+  Tooltip,
+} from "@mui/material";
 import {
   Delete as DeleteIcon,
   ShoppingCartCheckout as CheckoutIcon,
   ArrowBack as BackIcon,
-} from '@mui/icons-material';
-import { useMemo, useState } from 'react';
-import { Link as RouterLink, useNavigate } from 'react-router-dom';
-import { api } from '../api';
-import type { CartItem } from '../types';
+} from "@mui/icons-material";
+import { useMemo, useState } from "react";
+import { Link as RouterLink, useNavigate } from "react-router-dom";
+import { api } from "../api";
+import type { CartItem } from "../types";
 
 type Props = {
   cartItems: CartItem[];
   onCartChanged: () => Promise<void>;
+  isAuthenticated: boolean;
 };
 
-const normalizeImage = (image: string) => (image.startsWith('/') ? image : `/${image}`);
+const normalizeImage = (image: string) =>
+  image.startsWith("/") ? image : `/${image}`;
+const GUEST_CART_KEY = "shreda_guest_cart_v1";
 
-export default function CartPage({ cartItems, onCartChanged }: Props) {
-  const [error, setError] = useState('');
+const readGuestCart = (): CartItem[] => {
+  try {
+    const raw = localStorage.getItem(GUEST_CART_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as CartItem[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeGuestCart = (items: CartItem[]) => {
+  localStorage.setItem(GUEST_CART_KEY, JSON.stringify(items));
+};
+
+export default function CartPage({
+  cartItems,
+  onCartChanged,
+  isAuthenticated,
+}: Props) {
+  const [notification, setNotification] = useState<{
+    open: boolean;
+    message: string;
+    severity: "success" | "error" | "info";
+  }>({ open: false, message: "", severity: "info" });
+  const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
+  const [pendingRemoveProductId, setPendingRemoveProductId] = useState<
+    string | null
+  >(null);
   const navigate = useNavigate();
-  
+
   const productTotal = useMemo(
-    () => cartItems.reduce((sum, item) => sum + ((item.product?.priceCents || 0) * item.quantity), 0),
-    [cartItems]
+    () =>
+      cartItems.reduce(
+        (sum, item) => sum + (item.product?.priceCents || 0) * item.quantity,
+        0,
+      ),
+    [cartItems],
   );
-  
+
   const tax = productTotal * 0.1; // 10% tax
   const grandTotal = productTotal + tax;
 
   const removeItem = async (productId: string) => {
     try {
-      await api.delete(`/api/cart-items/${productId}`);
+      if (!isAuthenticated) {
+        const nextItems = readGuestCart().filter(
+          (item) => item.productId !== productId,
+        );
+        writeGuestCart(nextItems);
+      } else {
+        await api.delete(`/api/cart-items/${productId}`);
+      }
       await onCartChanged();
-      setError('');
+      setNotification({
+        open: true,
+        message: "Item removed from cart.",
+        severity: "success",
+      });
     } catch {
-      setError('Unable to remove item.');
+      setNotification({
+        open: true,
+        message: "Unable to remove item.",
+        severity: "error",
+      });
     }
   };
 
   const updateQuantity = async (productId: string, quantity: number) => {
     try {
-      await api.put(`/api/cart-items/${productId}`, { quantity });
+      if (!isAuthenticated) {
+        const nextItems = readGuestCart().map((item) =>
+          item.productId === productId ? { ...item, quantity } : item,
+        );
+        writeGuestCart(nextItems);
+      } else {
+        await api.put(`/api/cart-items/${productId}`, { quantity });
+      }
       await onCartChanged();
-      setError('');
+      setNotification({
+        open: true,
+        message: "Cart updated.",
+        severity: "success",
+      });
     } catch {
-      setError('Unable to update quantity.');
+      setNotification({
+        open: true,
+        message: "Unable to update quantity.",
+        severity: "error",
+      });
     }
+  };
+
+  const handleCheckoutClick = () => {
+    if (!isAuthenticated) {
+      setNotification({
+        open: true,
+        message: "You must be logged in to complete your purchase",
+        severity: "info",
+      });
+      window.setTimeout(() => {
+        navigate("/auth", {
+          state: {
+            from: "/cart",
+            info: "You must be logged in to complete your purchase",
+          },
+        });
+      }, 250);
+      return;
+    }
+    navigate("/checkout");
+  };
+
+  const handleRequestRemove = (productId: string) => {
+    setPendingRemoveProductId(productId);
+    setRemoveDialogOpen(true);
+  };
+
+  const handleConfirmRemove = async () => {
+    if (!pendingRemoveProductId) return;
+    await removeItem(pendingRemoveProductId);
+    setRemoveDialogOpen(false);
+    setPendingRemoveProductId(null);
   };
 
   if (cartItems.length === 0) {
     return (
-      <Box sx={{ textAlign: 'center', py: 10 }}>
-        <Typography variant="h3" sx={{ fontWeight: 900, mb: 2 }}>Your cart is empty</Typography>
+      <Box sx={{ textAlign: "center", py: 10 }}>
+        <Typography variant="h3" sx={{ fontWeight: 900, mb: 2 }}>
+          Your cart is empty
+        </Typography>
         <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
           Looks like you haven't added anything to your cart yet.
         </Typography>
-        <Button 
-          component={RouterLink} 
-          to="/" 
-          variant="contained" 
+        <Button
+          component={RouterLink}
+          to="/"
+          variant="contained"
           size="large"
           startIcon={<BackIcon />}
           sx={{ borderRadius: 3, fontWeight: 800, px: 4 }}
@@ -86,42 +190,70 @@ export default function CartPage({ cartItems, onCartChanged }: Props) {
 
   return (
     <Box>
-      <Typography variant="h3" sx={{ fontWeight: 900, mb: 4, letterSpacing: '-1px' }}>
+      <Typography
+        variant="h3"
+        sx={{ fontWeight: 900, mb: 4, letterSpacing: "-1px" }}
+      >
         Shopping Cart
       </Typography>
-      
-      {error && <Alert severity="error" sx={{ mb: 3, borderRadius: 2 }}>{error}</Alert>}
 
       <Grid container spacing={4}>
         <Grid size={{ xs: 12, md: 8 }}>
           <Stack spacing={2}>
             {cartItems.map((item) => (
-              <Card key={item.id} sx={{ borderRadius: 4, overflow: 'hidden', boxShadow: 2 }}>
-                <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 3, p: 3 }}>
-                  <Box sx={{ bgcolor: '#fff', p: 1, borderRadius: 2, border: '1px solid #eee' }}>
+              <Card
+                key={item.id}
+                sx={{ borderRadius: 4, overflow: "hidden", boxShadow: 2 }}
+              >
+                <CardContent
+                  sx={{ display: "flex", alignItems: "center", gap: 3, p: 3 }}
+                >
+                  <Box
+                    sx={{
+                      bgcolor: "#fff",
+                      p: 1,
+                      borderRadius: 2,
+                      border: "1px solid #eee",
+                    }}
+                  >
                     <CardMedia
                       component="img"
-                      image={normalizeImage(item.product?.image || '/images/logo.png')}
-                      sx={{ width: 100, height: 100, objectFit: 'contain' }}
+                      image={normalizeImage(
+                        item.product?.image || "/images/logo.png",
+                      )}
+                      sx={{ width: 100, height: 100, objectFit: "contain" }}
                     />
                   </Box>
                   <Box sx={{ flexGrow: 1 }}>
                     <Typography variant="h6" sx={{ fontWeight: 800, mb: 0.5 }}>
-                      {item.product?.name || 'Product'}
+                      {item.product?.name || "Product"}
                     </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ mb: 2 }}
+                    >
                       In Stock
                     </Typography>
-                    <Stack direction="row" spacing={3} sx={{ alignItems: 'center' }}>
+                    <Stack
+                      direction="row"
+                      spacing={3}
+                      sx={{ alignItems: "center" }}
+                    >
                       <TextField
                         select
                         size="small"
                         label="Qty"
                         value={item.quantity}
-                        onChange={(event) => updateQuantity(item.productId, Number(event.target.value))}
-                        sx={{ 
+                        onChange={(event) =>
+                          updateQuantity(
+                            item.productId,
+                            Number(event.target.value),
+                          )
+                        }
+                        sx={{
                           width: 80,
-                          '& .MuiOutlinedInput-root': { borderRadius: 2 }
+                          "& .MuiOutlinedInput-root": { borderRadius: 2 },
                         }}
                       >
                         {[...Array(10).keys()].map((i) => (
@@ -130,15 +262,26 @@ export default function CartPage({ cartItems, onCartChanged }: Props) {
                           </MenuItem>
                         ))}
                       </TextField>
-                      <Typography variant="h6" color="primary" sx={{ fontWeight: 900 }}>
-                        ${(((item.product?.priceCents || 0) * item.quantity) / 100).toFixed(2)}
+                      <Typography
+                        variant="h6"
+                        color="primary"
+                        sx={{ fontWeight: 900 }}
+                      >
+                        $
+                        {(
+                          ((item.product?.priceCents || 0) * item.quantity) /
+                          100
+                        ).toFixed(2)}
                       </Typography>
                     </Stack>
                   </Box>
-                  <IconButton 
-                    color="error" 
-                    onClick={() => removeItem(item.productId)}
-                    sx={{ bgcolor: 'error.lighter', '&:hover': { bgcolor: 'error.light' } }}
+                  <IconButton
+                    color="error"
+                    onClick={() => handleRequestRemove(item.productId)}
+                    sx={{
+                      bgcolor: "error.lighter",
+                      "&:hover": { bgcolor: "error.light" },
+                    }}
                   >
                     <DeleteIcon />
                   </IconButton>
@@ -149,52 +292,119 @@ export default function CartPage({ cartItems, onCartChanged }: Props) {
         </Grid>
 
         <Grid size={{ xs: 12, md: 4 }}>
-          <Paper sx={{ p: 4, borderRadius: 4, boxShadow: 4, position: 'sticky', top: 100 }}>
-            <Typography variant="h5" sx={{ fontWeight: 900, mb: 3 }}>Order Summary</Typography>
+          <Paper
+            sx={{
+              p: 4,
+              borderRadius: 4,
+              boxShadow: 4,
+              position: "sticky",
+              top: 100,
+            }}
+          >
+            <Typography variant="h5" sx={{ fontWeight: 900, mb: 3 }}>
+              Order Summary
+            </Typography>
             <Stack spacing={2} sx={{ mb: 3 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography color="text.secondary" sx={{ fontWeight: 600 }}>Subtotal</Typography>
-                <Typography sx={{ fontWeight: 700 }}>${(productTotal / 100).toFixed(2)}</Typography>
+              <Box sx={{ display: "flex", justifyContent: "space-between" }}>
+                <Typography color="text.secondary" sx={{ fontWeight: 600 }}>
+                  Subtotal
+                </Typography>
+                <Typography sx={{ fontWeight: 700 }}>
+                  ${(productTotal / 100).toFixed(2)}
+                </Typography>
               </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography color="text.secondary" sx={{ fontWeight: 600 }}>Estimated Tax (10%)</Typography>
-                <Typography sx={{ fontWeight: 700 }}>${(tax / 100).toFixed(2)}</Typography>
+              <Box sx={{ display: "flex", justifyContent: "space-between" }}>
+                <Typography color="text.secondary" sx={{ fontWeight: 600 }}>
+                  Estimated Tax (10%)
+                </Typography>
+                <Typography sx={{ fontWeight: 700 }}>
+                  ${(tax / 100).toFixed(2)}
+                </Typography>
               </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography color="text.secondary" sx={{ fontWeight: 600 }}>Shipping</Typography>
-                <Typography color="success.main" sx={{ fontWeight: 700 }}>FREE</Typography>
+              <Box sx={{ display: "flex", justifyContent: "space-between" }}>
+                <Typography color="text.secondary" sx={{ fontWeight: 600 }}>
+                  Shipping
+                </Typography>
+                <Typography color="success.main" sx={{ fontWeight: 700 }}>
+                  FREE
+                </Typography>
               </Box>
               <Divider sx={{ my: 1 }} />
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="h6" sx={{ fontWeight: 900 }}>Total</Typography>
-                <Typography variant="h6" color="primary" sx={{ fontWeight: 900 }}>
+              <Box sx={{ display: "flex", justifyContent: "space-between" }}>
+                <Typography variant="h6" sx={{ fontWeight: 900 }}>
+                  Total
+                </Typography>
+                <Typography
+                  variant="h6"
+                  color="primary"
+                  sx={{ fontWeight: 900 }}
+                >
                   ${(grandTotal / 100).toFixed(2)}
                 </Typography>
               </Box>
             </Stack>
-            <Button 
-              fullWidth 
-              variant="contained" 
-              size="large" 
-              startIcon={<CheckoutIcon />}
-              onClick={() => navigate('/checkout')}
-              sx={{ 
-                borderRadius: 3, 
-                py: 2, 
-                fontWeight: 800, 
-                fontSize: '1.1rem',
-                textTransform: 'none',
-                boxShadow: 4
-              }}
+            <Tooltip
+              title={
+                !isAuthenticated
+                  ? "You must be logged in to complete your purchase"
+                  : ""
+              }
+              arrow
             >
-              Checkout Now
-            </Button>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mt: 2 }}>
-              Secure checkout powered by SHREDA
-            </Typography>
+              <Button
+                fullWidth
+                variant="contained"
+                size="large"
+                startIcon={<CheckoutIcon />}
+                onClick={handleCheckoutClick}
+                sx={{
+                  borderRadius: 3,
+                  py: 2,
+                  fontWeight: 800,
+                  fontSize: "1.1rem",
+                  textTransform: "none",
+                  boxShadow: 4,
+                }}
+              >
+                {isAuthenticated ? "Checkout Now" : "Login to Order"}
+              </Button>
+            </Tooltip>
           </Paper>
         </Grid>
       </Grid>
+      <Snackbar
+        open={notification.open}
+        autoHideDuration={5000}
+        onClose={() => setNotification((prev) => ({ ...prev, open: false }))}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          severity={notification.severity}
+          variant="filled"
+          onClose={() => setNotification((prev) => ({ ...prev, open: false }))}
+          sx={{ borderRadius: 2, fontFamily: '"Inter", "Roboto", sans-serif' }}
+        >
+          {notification.message}
+        </Alert>
+      </Snackbar>
+      <Dialog
+        open={removeDialogOpen}
+        onClose={() => setRemoveDialogOpen(false)}
+        slotProps={{ paper: { sx: { borderRadius: 2 } } }}
+      >
+        <DialogTitle sx={{ fontFamily: '"Inter", "Roboto", sans-serif' }}>
+          Remove Item
+        </DialogTitle>
+        <DialogContent sx={{ fontFamily: '"Inter", "Roboto", sans-serif' }}>
+          Are you sure you want to remove this item from your cart?
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRemoveDialogOpen(false)}>Cancel</Button>
+          <Button color="error" onClick={handleConfirmRemove}>
+            Confirm
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

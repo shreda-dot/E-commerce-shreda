@@ -17,9 +17,16 @@ export function buildTheme(mode: 'light' | 'dark') {
       borderRadius: 14
     },
     typography: {
-      fontFamily: '"Inter", "Segoe UI", sans-serif'
+      fontFamily: '"Inter", "Roboto", "Segoe UI", sans-serif'
     },
     components: {
+      MuiCssBaseline: {
+        styleOverrides: {
+          body: {
+            fontFamily: '"Inter", "Roboto", "Segoe UI", sans-serif'
+          }
+        }
+      },
       MuiAppBar: {
         styleOverrides: {
           root: {

@@ -57,9 +57,10 @@ export default function RealisticLoader({
         variant="h6"
         sx={{
           fontWeight: 800,
-          color: "text.secondary",
-          textAlign: "center",
-          animation: `${pulse} 2s infinite ease-in-out`,
+          color: 'text.secondary',
+          textAlign: 'center',
+          fontFamily: '"Inter", sans-serif',
+          animation: `${pulse} 2s infinite ease-in-out`
         }}
       >
         {message}

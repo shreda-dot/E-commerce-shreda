@@ -1,7 +1,7 @@
-import { Alert, Box, Button, Card, CardContent, CircularProgress, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, Card, CardContent, CircularProgress, Snackbar, Stack, TextField, Typography } from '@mui/material';
 import { GoogleLogin } from '@react-oauth/google';
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 const getErrorMessage = (error: unknown, fallback: string) => {
@@ -17,6 +17,7 @@ const getErrorMessage = (error: unknown, fallback: string) => {
 
 export default function AuthPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { login, signup, verifySignup, loginWithGoogle, requestPasswordReset, resetPassword } = useAuth();
   const [tab, setTab] = useState<'login' | 'signup'>('login');
   const [step, setStep] = useState<'auth' | 'verifySignup' | 'forgotPassword'>('auth');
@@ -25,42 +26,62 @@ export default function AuthPage() {
   const [password, setPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [otpCode, setOtpCode] = useState('');
-  const [info, setInfo] = useState('');
-  const [error, setError] = useState('');
+  const [notification, setNotification] = useState<{
+    open: boolean;
+    message: string;
+    severity: 'success' | 'error' | 'info';
+  }>({ open: false, message: '', severity: 'info' });
   const [errorCode, setErrorCode] = useState('');
   const [requestingReset, setRequestingReset] = useState(false);
   const googleClientIdConfigured = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
+  const redirectTo = (location.state as { from?: string } | null)?.from || '/';
+  const prefilledInfo = (location.state as { info?: string } | null)?.info || '';
+
+  useEffect(() => {
+    if (prefilledInfo) {
+      setNotification({ open: true, message: prefilledInfo, severity: 'info' });
+    }
+  }, [prefilledInfo]);
+
+  useEffect(() => {
+    if (!notification.open) return;
+    const timeout = window.setTimeout(() => {
+      setNotification((prev) => ({ ...prev, open: false, message: '' }));
+      setErrorCode('');
+    }, 5000);
+    return () => window.clearTimeout(timeout);
+  }, [notification.open]);
 
   const submit = async () => {
     try {
-      setError('');
+      setNotification((prev) => ({ ...prev, open: false, message: '' }));
       setErrorCode('');
       if (tab === 'login') {
         await login(email, password);
-        navigate('/');
+        navigate(redirectTo);
       } else {
         const message = await signup(name, email, password);
-        setInfo(message);
+        setNotification({ open: true, message, severity: 'success' });
         setStep('verifySignup');
         return;
       }
-      navigate('/');
+      navigate(redirectTo);
     } catch (error: unknown) {
       const parsed = getErrorMessage(error, 'Authentication failed');
-      setError(parsed.message);
+      setNotification({ open: true, message: parsed.message, severity: 'error' });
       setErrorCode(parsed.code);
     }
   };
 
   const verifyOtp = async () => {
     try {
-      setError('');
+      setNotification((prev) => ({ ...prev, open: false, message: '' }));
       setErrorCode('');
       await verifySignup(email, otpCode);
-      navigate('/');
+      navigate(redirectTo);
     } catch (error: unknown) {
       const parsed = getErrorMessage(error, 'OTP verification failed');
-      setError(parsed.message);
+      setNotification({ open: true, message: parsed.message, severity: 'error' });
       setErrorCode(parsed.code);
     }
   };
@@ -68,14 +89,14 @@ export default function AuthPage() {
   const requestForgotPassword = async () => {
     try {
       setRequestingReset(true);
-      setError('');
+      setNotification((prev) => ({ ...prev, open: false, message: '' }));
       setErrorCode('');
       const message = await requestPasswordReset(email);
-      setInfo(message);
+      setNotification({ open: true, message, severity: 'success' });
       setStep('forgotPassword');
     } catch (error: unknown) {
       const parsed = getErrorMessage(error, 'Unable to request password reset');
-      setError(parsed.message);
+      setNotification({ open: true, message: parsed.message, severity: 'error' });
       setErrorCode(parsed.code);
     } finally {
       setRequestingReset(false);
@@ -84,15 +105,15 @@ export default function AuthPage() {
 
   const submitResetPassword = async () => {
     try {
-      setError('');
+      setNotification((prev) => ({ ...prev, open: false, message: '' }));
       setErrorCode('');
       const message = await resetPassword(email, otpCode, newPassword);
-      setInfo(message);
+      setNotification({ open: true, message, severity: 'success' });
       setStep('auth');
       setTab('login');
     } catch (error: unknown) {
       const parsed = getErrorMessage(error, 'Unable to reset password');
-      setError(parsed.message);
+      setNotification({ open: true, message: parsed.message, severity: 'error' });
       setErrorCode(parsed.code);
     }
   };
@@ -131,13 +152,11 @@ export default function AuthPage() {
             </Button>
           </Stack>
           <Stack spacing={2}>
-            {error && <Alert severity="error">{error}</Alert>}
             {(errorCode === 'USER_SUSPENDED' || errorCode === 'USER_FROZEN') && (
-              <Alert severity="warning">
+              <Typography variant="body2" color="warning.main" sx={{ fontWeight: 600 }}>
                 Need help? Contact us: <a href="mailto:ezinwaugochukw@gmail.com">ezinwaugochukw@gmail.com</a>
-              </Alert>
+              </Typography>
             )}
-            {info && <Alert severity="success">{info}</Alert>}
             {tab === 'signup' && (
               <TextField label="Full Name" value={name} onChange={(e) => setName(e.target.value)} fullWidth />
             )}
@@ -200,13 +219,13 @@ export default function AuthPage() {
                     try {
                       if (!credentialResponse.credential) return;
                       await loginWithGoogle(credentialResponse.credential);
-                      navigate('/');
+                      navigate(redirectTo);
                     } catch (error: unknown) {
                       const parsed = getErrorMessage(error, 'Google login failed');
-                      setError(parsed.message);
+                      setNotification({ open: true, message: parsed.message, severity: 'error' });
                     }
                   }}
-                  onError={() => setError('Google login failed')}
+                  onError={() => setNotification({ open: true, message: 'Google login failed', severity: 'error' })}
                 />
               </Box>
             ) : (
@@ -217,6 +236,21 @@ export default function AuthPage() {
           </Stack>
         </CardContent>
       </Card>
+      <Snackbar
+        open={notification.open}
+        autoHideDuration={5000}
+        onClose={() => setNotification((prev) => ({ ...prev, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert
+          severity={notification.severity}
+          variant="filled"
+          onClose={() => setNotification((prev) => ({ ...prev, open: false }))}
+          sx={{ width: '100%', borderRadius: 2, fontFamily: '"Inter", "Roboto", sans-serif' }}
+        >
+          {notification.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

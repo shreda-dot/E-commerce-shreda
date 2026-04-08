@@ -1,4 +1,4 @@
-import { Avatar, Box, Button, Card, CardContent, Divider, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Avatar, Box, Button, Card, CardContent, Chip, Divider, Snackbar, Stack, Step, StepLabel, Stepper, TextField, Typography } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { api } from '../api';
@@ -8,18 +8,52 @@ type OrderItem = {
   id: string;
   orderTimeMs: number;
   totalCostCents: number;
+  status?: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
   products: Array<{ quantity: number }>;
+};
+
+type MessageState = {
+  open: boolean;
+  text: string;
+  severity: 'success' | 'error';
+};
+
+const ORDER_STAGES = ['Processing', 'Shipped', 'Delivered'];
+
+const normalizeImage = (image: string | null | undefined): string | undefined => {
+  if (!image) return undefined;
+  if (image.startsWith('blob:') || image.startsWith('http://') || image.startsWith('https://')) return image;
+  return image.startsWith('/') ? image : `/${image}`;
+};
+
+const getOrderStep = (status: OrderItem['status']) => {
+  if (status === 'delivered') return 2;
+  if (status === 'shipped') return 1;
+  return 0;
 };
 
 export default function AccountPage() {
   const { user, refresh } = useAuth();
-  const [name, setName] = useState(user?.name || '');
+  const [name, setName] = useState<string>(user?.name || '');
   const [orders, setOrders] = useState<OrderItem[]>([]);
-  const [message, setMessage] = useState('');
+  const [profileImage, setProfileImage] = useState<string | undefined>(normalizeImage(user?.profileImage));
+  const [message, setMessage] = useState<MessageState>({ open: false, text: '', severity: 'success' });
 
   useEffect(() => {
     setName(user?.name || '');
   }, [user?.name]);
+
+  useEffect(() => {
+    setProfileImage(normalizeImage(user?.profileImage));
+  }, [user?.profileImage]);
+
+  useEffect(() => {
+    if (!message.open) return;
+    const timeout = window.setTimeout(() => {
+      setMessage((prev) => ({ ...prev, open: false, text: '' }));
+    }, 5000);
+    return () => window.clearTimeout(timeout);
+  }, [message.open]);
 
   useEffect(() => {
     if (!user) return;
@@ -36,14 +70,24 @@ export default function AccountPage() {
   const uploadImage = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    const preview = URL.createObjectURL(file);
+    setProfileImage(preview);
+
     const formData = new FormData();
     formData.append('image', file);
     try {
-      await api.post('/api/auth/profile/image', formData);
+      const response = await api.post<{ profileImage?: string }>('/api/auth/profile/image', formData);
+      const serverImage = normalizeImage(response.data?.profileImage);
+      if (serverImage) {
+        setProfileImage(serverImage);
+      }
       await refresh();
-      setMessage('Profile image updated.');
+      setMessage({ open: true, text: 'Profile image updated.', severity: 'success' });
     } catch {
-      setMessage('Unable to upload image.');
+      setProfileImage(normalizeImage(user?.profileImage));
+      setMessage({ open: true, text: 'Unable to upload image.', severity: 'error' });
+    } finally {
+      URL.revokeObjectURL(preview);
     }
   };
 
@@ -51,9 +95,9 @@ export default function AccountPage() {
     try {
       await api.put('/api/auth/profile', { name });
       await refresh();
-      setMessage('Profile updated.');
+      setMessage({ open: true, text: 'Profile updated.', severity: 'success' });
     } catch {
-      setMessage('Unable to update profile.');
+      setMessage({ open: true, text: 'Unable to update profile.', severity: 'error' });
     }
   };
 
@@ -66,13 +110,12 @@ export default function AccountPage() {
   return (
     <Stack spacing={2}>
       <Typography variant="h4" sx={{ fontWeight: 800 }}>My Account</Typography>
-      {message && <Typography color="primary">{message}</Typography>}
       <Card>
         <CardContent>
           <Stack spacing={2} direction={{ xs: 'column', md: 'row' }}>
             <Stack spacing={1} sx={{ alignItems: 'center' }}>
               <Avatar
-                src={user.profileImage || undefined}
+                src={profileImage}
                 sx={{ width: 84, height: 84 }}
               >
                 {user.name?.slice(0, 1).toUpperCase()}
@@ -108,6 +151,22 @@ export default function AccountPage() {
                 <Typography variant="body2" color="text.secondary">
                   {new Date(order.orderTimeMs).toLocaleString()} | Items: {order.products.reduce((sum, p) => sum + p.quantity, 0)}
                 </Typography>
+                <Box sx={{ mt: 1.5, mb: 1 }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
+                    Track Order
+                  </Typography>
+                  {order.status === 'cancelled' ? (
+                    <Chip label="Cancelled" color="error" size="small" />
+                  ) : (
+                    <Stepper activeStep={getOrderStep(order.status)} alternativeLabel>
+                      {ORDER_STAGES.map((stage) => (
+                        <Step key={stage}>
+                          <StepLabel>{stage}</StepLabel>
+                        </Step>
+                      ))}
+                    </Stepper>
+                  )}
+                </Box>
                 <Divider sx={{ mt: 1 }} />
               </Box>
             ))}
@@ -115,6 +174,21 @@ export default function AccountPage() {
           </Stack>
         </CardContent>
       </Card>
+      <Snackbar
+        open={message.open}
+        autoHideDuration={5000}
+        onClose={() => setMessage((prev) => ({ ...prev, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert
+          severity={message.severity}
+          variant="filled"
+          onClose={() => setMessage((prev) => ({ ...prev, open: false }))}
+          sx={{ width: '100%', borderRadius: 2, fontFamily: '"Inter", "Roboto", sans-serif' }}
+        >
+          {message.text}
+        </Alert>
+      </Snackbar>
     </Stack>
   );
 }
