@@ -41,10 +41,7 @@ function setAuthCookie(res, token) {
     'Max-Age=604800',
     'SameSite=Lax'
   ];
-  if (isProduction) {
-    parts.push('Secure');
-  }
-
+  if (isProduction) parts.push('Secure');
   res.setHeader('Set-Cookie', parts.join('; '));
 }
 
@@ -57,10 +54,7 @@ function clearAuthCookie(res) {
     'Max-Age=0',
     'SameSite=Lax'
   ];
-  if (isProduction) {
-    parts.push('Secure');
-  }
-
+  if (isProduction) parts.push('Secure');
   res.setHeader('Set-Cookie', parts.join('; '));
 }
 
@@ -119,7 +113,24 @@ router.post('/login', async (req, res) => {
   }
 });
 
+// ─── FIX: Registration OTP (The Ghost Code) ───────────────────────────────
+// ROOT CAUSE: If sendOtpEmail() throws for any reason other than
+// 'SMTP_NOT_CONFIGURED' (e.g. wrong credentials, network timeout, bad host),
+// the user record was already saved to the DB but the email silently failed.
+// The user was stuck — couldn't log in (unverified), couldn't re-register
+// (email already exists), and never received the OTP. Ghost account.
+//
+// THE FIX:
+// 1. Generate OTP and hash password BEFORE creating the user.
+// 2. Create the user record in the DB.
+// 3. Attempt to send the email in its own try/catch.
+// 4. If the email send FAILS → immediately destroy the new user record
+//    so the user can retry registration cleanly with the same email.
+// 5. Surface a clear error so the frontend can show a helpful message.
+// ─────────────────────────────────────────────────────────────────────────
 router.post('/signup', async (req, res) => {
+  let newUser = null; // track the created user so we can roll back if email fails
+
   try {
     const name = String(req.body?.name || '').trim();
     const email = String(req.body?.email || '').trim().toLowerCase();
@@ -140,14 +151,23 @@ router.post('/signup', async (req, res) => {
     }
 
     const existing = await User.findOne({ where: { email } });
-    if (existing) {
+    if (existing && existing.isVerified) {
       return badRequest(res, 'User with this email already exists', 'EMAIL_EXISTS');
     }
 
+    // If a ghost/unverified account exists for this email (previous failed
+    // registration), destroy it and let them start fresh.
+    if (existing && !existing.isVerified) {
+      await existing.destroy();
+    }
+
+    // Step 1: Prepare all values BEFORE hitting the DB
     const verificationCode = String(Math.floor(100000 + Math.random() * 900000));
     const verificationCodeExpiresAt = Date.now() + 10 * 60 * 1000;
     const passwordHash = await hashPassword(password);
-    await User.create({
+
+    // Step 2: Save user to DB
+    newUser = await User.create({
       name,
       email,
       passwordHash,
@@ -158,15 +178,39 @@ router.post('/signup', async (req, res) => {
       verificationCodeExpiresAt
     });
 
-    await sendOtpEmail(email, verificationCode);
+    // Step 3: Attempt to send OTP email — in its own try/catch so we can
+    // roll back the DB record if this fails for any reason.
+    try {
+      await sendOtpEmail(email, verificationCode);
+    } catch (emailError) {
+      // Step 4: Email failed — delete the ghost user so they can retry
+      await newUser.destroy();
+      newUser = null;
+
+      // Surface a meaningful error based on the failure type
+      if (String(emailError?.message) === 'SMTP_NOT_CONFIGURED') {
+        return badRequest(
+          res,
+          'Email verification is not configured on this server. Please contact support.',
+          'SMTP_NOT_CONFIGURED'
+        );
+      }
+
+      // Any other SMTP error (bad credentials, network, etc.)
+      console.error('[signup] sendOtpEmail failed:', emailError);
+      return res.status(500).json({
+        error: 'We could not send your verification email. Please try again in a moment.',
+        code: 'EMAIL_SEND_FAILED'
+      });
+    }
+
+    // Step 5: All good — tell the frontend to show the OTP input
     return res.status(201).json({ message: 'Verification code sent to your email' });
+
   } catch (error) {
-    if (String(error?.message) === 'SMTP_NOT_CONFIGURED') {
-      return badRequest(
-        res,
-        'Email verification is not configured on server. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS.',
-        'SMTP_NOT_CONFIGURED'
-      );
+    // If the DB create itself failed and we somehow have a user, clean up
+    if (newUser) {
+      try { await newUser.destroy(); } catch (_) { /* best-effort */ }
     }
     return internalError(res, error);
   }
@@ -323,9 +367,7 @@ router.post('/profile/image', requireAuth, upload.single('image'), async (req, r
     }
     req.user.profileImage = `/uploads/profile-images/${req.file.filename}`;
     await req.user.save();
-    return res.json({
-      profileImage: req.user.profileImage
-    });
+    return res.json({ profileImage: req.user.profileImage });
   } catch (error) {
     return internalError(res, error);
   }
@@ -459,17 +501,10 @@ router.patch('/admin/users/:userId/role', requireAdmin, async (req, res) => {
     if (!user) {
       return res.status(404).json({ error: 'User not found', code: 'USER_NOT_FOUND' });
     }
-
     user.role = role;
     await user.save();
     return res.json({
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        status: user.status
-      }
+      user: { id: user.id, name: user.name, email: user.email, role: user.role, status: user.status }
     });
   } catch (error) {
     return internalError(res, error);
@@ -488,17 +523,10 @@ router.patch('/admin/users/:userId/status', requireAdmin, async (req, res) => {
     if (!user) {
       return res.status(404).json({ error: 'User not found', code: 'USER_NOT_FOUND' });
     }
-
     user.status = status;
     await user.save();
     return res.json({
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        status: user.status
-      }
+      user: { id: user.id, name: user.name, email: user.email, role: user.role, status: user.status }
     });
   } catch (error) {
     return internalError(res, error);
@@ -525,13 +553,7 @@ router.put('/admin/users/:userId', requireAdmin, async (req, res) => {
 
     await user.save();
     return res.json({
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        status: user.status
-      }
+      user: { id: user.id, name: user.name, email: user.email, role: user.role, status: user.status }
     });
   } catch (error) {
     return internalError(res, error);
@@ -548,7 +570,6 @@ router.delete('/admin/users/:userId', requireAdmin, async (req, res) => {
     if (user.email === configuredAdminEmail) {
       return badRequest(res, 'Configured admin user cannot be deleted', 'PROTECTED_ADMIN');
     }
-
     await user.destroy();
     return res.status(204).send();
   } catch (error) {
@@ -578,6 +599,15 @@ router.patch('/admin/users/:userId/password', requireAdmin, async (req, res) => 
   } catch (error) {
     return internalError(res, error);
   }
+});
+router.get('/test-smtp', async (req, res) => {
+  res.json({
+    host: process.env.SMTP_HOST,
+    port: process.env.SMTP_PORT,
+    user: process.env.SMTP_USER,
+    hasPass: Boolean(process.env.SMTP_PASS),
+    passLength: process.env.SMTP_PASS?.length,
+  });
 });
 
 export default router;
