@@ -59,8 +59,7 @@ export default function RealisticLoader({
           fontWeight: 800,
           color: 'text.secondary',
           textAlign: 'center',
-          fontFamily: '"Inter", sans-serif',
-          animation: `${pulse} 2s infinite ease-in-out`
+          animation: `${pulse} 2s infinite ease-in-out`,
         }}
       >
         {message}

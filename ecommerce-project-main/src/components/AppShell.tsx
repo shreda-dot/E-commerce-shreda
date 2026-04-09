@@ -390,7 +390,6 @@ export default function AppShell({
                   : "rgba(30,30,50,0.7)",
               backdropFilter: "blur(10px)",
               transition: "all 0.3s ease",
-              fontFamily: '"Inter", sans-serif',
               boxShadow: isScrolled
                 ? "0 4px 20px rgba(0,0,0,0.1)"
                 : "0 8px 32px rgba(0,0,0,0.08)",

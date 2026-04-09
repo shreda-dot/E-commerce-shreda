@@ -331,7 +331,7 @@ export default function ShopPage({ onCartChanged, search, isAuthenticated }: Pro
         <Alert
           severity={notification.severity}
           variant="filled"
-          sx={{ width: '100%', borderRadius: 2, fontFamily: '"Inter", "Roboto", sans-serif' }}
+          sx={{ width: '100%', borderRadius: 2 }}
         >
           {notification.message}
         </Alert>

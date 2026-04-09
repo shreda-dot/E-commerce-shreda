@@ -175,7 +175,7 @@ function AppContent() {
           severity="success"
           variant="filled"
           onClose={() => setWelcomeOpen(false)}
-          sx={{ borderRadius: 2, fontFamily: '"Inter", "Roboto", sans-serif' }}
+          sx={{ borderRadius: 2 }}
         >
           {user
             ? user.role === "admin"
@@ -190,12 +190,6 @@ function AppContent() {
 
 export default function App() {
   const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-  const rawPaypalId = import.meta.env.VITE_PAYPAL_CLIENT_ID;
-  const isPlaceholder = !rawPaypalId || rawPaypalId.startsWith('YOUR_');
-  const paypalClientId = isPlaceholder ? 'test' : rawPaypalId;
-  if (isPlaceholder) {
-    console.warn('[PayPal] VITE_PAYPAL_CLIENT_ID is not set — using "test" (sandbox only). Replace it in ecommerce-project-main/.env with your real Sandbox Client ID from developer.paypal.com.');
-  }
 
   const content = (
     <AuthProvider>
@@ -203,15 +197,9 @@ export default function App() {
     </AuthProvider>
   );
 
-  const withGoogle = googleClientId ? (
+  return googleClientId ? (
     <GoogleOAuthProvider clientId={googleClientId}>{content}</GoogleOAuthProvider>
   ) : (
     content
-  );
-
-  return (
-    <PayPalScriptProvider options={{ clientId: paypalClientId, currency: "USD" }}>
-      {withGoogle}
-    </PayPalScriptProvider>
   );
 }

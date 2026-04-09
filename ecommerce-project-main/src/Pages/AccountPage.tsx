@@ -184,7 +184,7 @@ export default function AccountPage() {
           severity={message.severity}
           variant="filled"
           onClose={() => setMessage((prev) => ({ ...prev, open: false }))}
-          sx={{ width: '100%', borderRadius: 2, fontFamily: '"Inter", "Roboto", sans-serif' }}
+          sx={{ width: '100%', borderRadius: 2 }}
         >
           {message.text}
         </Alert>

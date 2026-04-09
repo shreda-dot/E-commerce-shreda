@@ -1,5 +1,6 @@
 import { createContext, useContext, useMemo, useState } from 'react';
 import { CssBaseline, ThemeProvider, createTheme } from '@mui/material';
+import { FONT_BODY } from '../theme';
 
 type ThemeModeContextType = {
   mode: 'light' | 'dark';
@@ -39,8 +40,8 @@ export function ThemeModeProvider({ children }: { children: React.ReactNode }) {
         },
         shape: { borderRadius: 14 },
         typography: {
-          fontFamily: '"Inter", "Segoe UI", sans-serif'
-        }
+          fontFamily: FONT_BODY,
+        },
       }),
     [mode]
   );

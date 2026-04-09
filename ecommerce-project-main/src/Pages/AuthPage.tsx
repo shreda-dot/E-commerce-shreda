@@ -246,7 +246,7 @@ export default function AuthPage() {
           severity={notification.severity}
           variant="filled"
           onClose={() => setNotification((prev) => ({ ...prev, open: false }))}
-          sx={{ width: '100%', borderRadius: 2, fontFamily: '"Inter", "Roboto", sans-serif' }}
+          sx={{ width: '100%', borderRadius: 2 }}
         >
           {notification.message}
         </Alert>

@@ -912,10 +912,10 @@ export default function AdminPage() {
         onClose={() => setConfirmDialog({ open: false, title: "", message: "", onConfirm: null })}
         slotProps={{ paper: { sx: { borderRadius: 2 } } }}
       >
-        <DialogTitle sx={{ fontWeight: 800, fontFamily: '"Inter", "Roboto", sans-serif' }}>
+        <DialogTitle sx={{ fontWeight: 800 }}>
           {confirmDialog.title}
         </DialogTitle>
-        <DialogContent sx={{ fontFamily: '"Inter", "Roboto", sans-serif' }}>
+        <DialogContent>
           {confirmDialog.message}
         </DialogContent>
         <DialogActions>
@@ -945,7 +945,7 @@ export default function AdminPage() {
           severity={notification.severity}
           variant="filled"
           onClose={() => setNotification((prev) => ({ ...prev, open: false }))}
-          sx={{ width: "100%", borderRadius: 2, fontFamily: '"Inter", "Roboto", sans-serif' }}
+          sx={{ width: "100%", borderRadius: 2 }}
         >
           {notification.message}
           {errorDetail && notification.severity === "error" ? ` (${errorDetail})` : ""}

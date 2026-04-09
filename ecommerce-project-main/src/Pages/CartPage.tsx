@@ -382,7 +382,7 @@ export default function CartPage({
           severity={notification.severity}
           variant="filled"
           onClose={() => setNotification((prev) => ({ ...prev, open: false }))}
-          sx={{ borderRadius: 2, fontFamily: '"Inter", "Roboto", sans-serif' }}
+          sx={{ borderRadius: 2 }}
         >
           {notification.message}
         </Alert>
@@ -392,10 +392,10 @@ export default function CartPage({
         onClose={() => setRemoveDialogOpen(false)}
         slotProps={{ paper: { sx: { borderRadius: 2 } } }}
       >
-        <DialogTitle sx={{ fontFamily: '"Inter", "Roboto", sans-serif' }}>
+        <DialogTitle>
           Remove Item
         </DialogTitle>
-        <DialogContent sx={{ fontFamily: '"Inter", "Roboto", sans-serif' }}>
+        <DialogContent>
           Are you sure you want to remove this item from your cart?
         </DialogContent>
         <DialogActions>

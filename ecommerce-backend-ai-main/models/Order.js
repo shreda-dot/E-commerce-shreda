@@ -34,6 +34,11 @@ export const Order = sequelize.define(
       type: DataTypes.STRING,
       allowNull: true,
     },
+    /** Flutterwave transaction ID after successful verify (v3 transactions verify) */
+    flutterwaveTransactionId: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
     createdAt: {
       type: DataTypes.DATE(3),
     },
