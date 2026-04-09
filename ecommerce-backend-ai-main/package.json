@@ -23,7 +23,7 @@
     "multer": "^2.1.1",
     "mysql2": "^3.14.1",
     "nodemailer": "^8.0.5",
-    "patch-package": "8.0.0",
+    "patch-package": "^8.0.1",
     "pg": "^8.16.0",
     "sequelize": "^6.6.5",
     "sql.js": "1.10.3",

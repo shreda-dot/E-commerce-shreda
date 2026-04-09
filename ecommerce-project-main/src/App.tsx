@@ -1,29 +1,26 @@
-import {
-  Alert,
-  CssBaseline,
-  Snackbar,
-  ThemeProvider,
-  Box,
-} from "@mui/material";
+import { Alert, Box, CssBaseline, Snackbar, ThemeProvider } from "@mui/material";
 import { GoogleOAuthProvider } from "@react-oauth/google";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
+import { api } from "./api";
 import AppShell from "./components/AppShell";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
-import { api } from "./api";
-import type { CartItem } from "./types";
-import { useEffect } from "react";
-import ShopPage from "./Pages/ShopPage";
-import CartPage from "./Pages/CartPage";
-import AuthPage from "./Pages/AuthPage";
-import { buildTheme } from "./theme";
-import MuiCheckoutPage from "./Pages/MuiCheckoutPage";
-import AdminPage from "./Pages/AdminPage";
 import AccountPage from "./Pages/AccountPage";
+import AdminPage from "./Pages/AdminPage";
+import AuthPage from "./Pages/AuthPage";
+import CartPage from "./Pages/CartPage";
+import MuiCheckoutPage from "./Pages/MuiCheckoutPage";
+import ShopPage from "./Pages/ShopPage";
 import RealisticLoader from "./components/RealisticLoader";
+import { buildTheme } from "./theme";
+import type { CartItem } from "./types";
 
-const GUEST_CART_KEY = "shreda_guest_cart_v1";
+/* ─── storage keys ──────────────────────────────────────────────── */
+const GUEST_CART_KEY  = "shreda_guest_cart_v1";
+const THEME_KEY       = "shreda_theme";
+const SEEN_USERS_KEY  = "shreda_seen_users";
 
+/* ─── guest cart helpers ─────────────────────────────────────────── */
 const readGuestCart = (): CartItem[] => {
   try {
     const raw = localStorage.getItem(GUEST_CART_KEY);
@@ -34,93 +31,136 @@ const readGuestCart = (): CartItem[] => {
     return [];
   }
 };
-
-const writeGuestCart = (items: CartItem[]) => {
+const writeGuestCart = (items: CartItem[]) =>
   localStorage.setItem(GUEST_CART_KEY, JSON.stringify(items));
+
+/* ─── theme persistence ──────────────────────────────────────────── */
+const readTheme = (): "light" | "dark" => {
+  try {
+    return localStorage.getItem(THEME_KEY) === "dark" ? "dark" : "light";
+  } catch {
+    return "light";
+  }
 };
 
+/* ─── "seen users" tracker for new-vs-returning welcome ─────────── */
+const getSeenUsers = (): Set<string> => {
+  try {
+    const raw = localStorage.getItem(SEEN_USERS_KEY);
+    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+  } catch {
+    return new Set();
+  }
+};
+
+/**
+ * Marks a userId as seen. Returns true the FIRST time we see this userId
+ * (meaning the user is new / first login on this browser).
+ */
+const markUserSeen = (userId: string): boolean => {
+  const seen = getSeenUsers();
+  const isFirstTime = !seen.has(userId);
+  seen.add(userId);
+  try {
+    localStorage.setItem(SEEN_USERS_KEY, JSON.stringify([...seen]));
+  } catch { /* localStorage full or blocked */ }
+  return isFirstTime;
+};
+
+/* ─── AppContent ─────────────────────────────────────────────────── */
 function AppContent() {
   const { user, logout, loading: authLoading } = useAuth();
-  const [mode, setMode] = useState<"light" | "dark">("light");
+
+  const [mode, setMode] = useState<"light" | "dark">(readTheme);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [search, setSearch] = useState("");
   const [welcomeOpen, setWelcomeOpen] = useState(false);
+  const [isNewUser, setIsNewUser] = useState(false);
   const previousUserIdRef = useRef<string | null>(null);
 
-  const theme = useMemo(() => buildTheme(mode), [mode]);
+  const theme    = useMemo(() => buildTheme(mode), [mode]);
   const cartCount = useMemo(
     () => cartItems.reduce((sum, item) => sum + item.quantity, 0),
     [cartItems],
   );
 
+  /* Toggle mode and persist to localStorage */
+  const toggleMode = () => {
+    setMode((v) => {
+      const next = v === "light" ? "dark" : "light";
+      try { localStorage.setItem(THEME_KEY, next); } catch { /* noop */ }
+      return next;
+    });
+  };
+
+  /* Cart loader */
   const loadCart = async () => {
-    if (!user) {
-      setCartItems(readGuestCart());
-      return;
-    }
+    if (!user) { setCartItems(readGuestCart()); return; }
     try {
-      const response = await api.get<CartItem[]>("/api/cart-items?expand=product");
-      setCartItems(response.data);
+      const res = await api.get<CartItem[]>("/api/cart-items?expand=product");
+      setCartItems(res.data);
     } catch {
       setCartItems([]);
     }
   };
 
   useEffect(() => {
-    if (!authLoading) {
-      loadCart();
-    }
+    if (!authLoading) loadCart();
   }, [authLoading, user]);
 
+  /* Sync guest cart to server on login */
   useEffect(() => {
     if (!user) return;
-    const syncGuestCartToServer = async () => {
+    const sync = async () => {
       const guestItems = readGuestCart();
-      if (guestItems.length === 0) return;
+      if (!guestItems.length) return;
       try {
-        for (const item of guestItems) {
-          await api.post("/api/cart-items", {
-            productId: item.productId,
-            quantity: item.quantity,
-          });
-        }
+        for (const item of guestItems)
+          await api.post("/api/cart-items", { productId: item.productId, quantity: item.quantity });
         writeGuestCart([]);
         await loadCart();
-      } catch {
-        // keep guest cart if sync fails
-      }
+      } catch { /* keep guest cart */ }
     };
-    void syncGuestCartToServer();
+    void sync();
   }, [user]);
 
+  /*
+   * Smart welcome snackbar:
+   * - fires once per browser session (sessionStorage guard)
+   * - distinguishes new users (first login on this browser) from returning ones
+   */
   useEffect(() => {
-    if (user && previousUserIdRef.current !== user.id) {
-      setWelcomeOpen(true);
-      previousUserIdRef.current = user.id;
-    }
-    if (!user) {
-      previousUserIdRef.current = null;
-    }
+    if (!user) { previousUserIdRef.current = null; return; }
+    if (previousUserIdRef.current === user.id) return;
+    previousUserIdRef.current = user.id;
+
+    const sessionKey = `shreda_welcomed_${user.id}`;
+    if (sessionStorage.getItem(sessionKey)) return; // already shown this session
+
+    const isFirst = markUserSeen(user.id);
+    setIsNewUser(isFirst);
+    setWelcomeOpen(true);
+    sessionStorage.setItem(sessionKey, "1");
   }, [user]);
 
+  /* Loading splash */
   if (authLoading) {
     return (
       <ThemeProvider theme={theme}>
         <CssBaseline />
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            minHeight: "100vh",
-            bgcolor: "background.default",
-          }}
-        >
+        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", bgcolor: "background.default" }}>
           <RealisticLoader message="Starting Shreda Experience..." />
         </Box>
       </ThemeProvider>
     );
   }
+
+  const welcomeMessage = (): string => {
+    if (!user) return "Welcome back";
+    if (user.role === "admin") return "Welcome back, Admin";
+    if (isNewUser) return `Welcome to SHREDA, ${user.name}! 🎉`;
+    return `Welcome back, ${user.name}`;
+  };
 
   return (
     <ThemeProvider theme={theme}>
@@ -128,43 +168,23 @@ function AppContent() {
       <AppShell
         cartCount={cartCount}
         mode={mode}
-        onToggleMode={() => setMode((v) => (v === "light" ? "dark" : "light"))}
+        onToggleMode={toggleMode}
         user={user}
         onLogout={logout}
         search={search}
         onSearchChange={setSearch}
       >
         <Routes>
-          <Route
-            path="/"
-            element={
-              <ShopPage
-                onCartChanged={loadCart}
-                search={search}
-                isAuthenticated={Boolean(user)}
-              />
-            }
-          />
-          <Route
-            path="/cart"
-            element={
-              <CartPage
-                cartItems={cartItems}
-                onCartChanged={loadCart}
-                isAuthenticated={Boolean(user)}
-              />
-            }
-          />
-          <Route
-            path="/checkout"
-            element={<MuiCheckoutPage onOrderPlaced={loadCart} />}
-          />
+          <Route path="/" element={<ShopPage onCartChanged={loadCart} search={search} isAuthenticated={Boolean(user)} />} />
+          <Route path="/cart" element={<CartPage cartItems={cartItems} onCartChanged={loadCart} isAuthenticated={Boolean(user)} />} />
+          <Route path="/checkout" element={<MuiCheckoutPage onOrderPlaced={loadCart} />} />
           <Route path="/account" element={<AccountPage />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/auth" element={<AuthPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AppShell>
+
       <Snackbar
         open={welcomeOpen}
         autoHideDuration={5000}
@@ -172,34 +192,27 @@ function AppContent() {
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       >
         <Alert
-          severity="success"
+          severity={isNewUser ? "info" : "success"}
           variant="filled"
           onClose={() => setWelcomeOpen(false)}
-          sx={{ borderRadius: 2 }}
+          sx={{ borderRadius: 2, fontWeight: 700 }}
         >
-          {user
-            ? user.role === "admin"
-              ? "Welcome back, Admin"
-              : `Welcome back, ${user.name}`
-            : "Welcome back"}
+          {welcomeMessage()}
         </Alert>
       </Snackbar>
     </ThemeProvider>
   );
 }
 
+/* ─── App root ───────────────────────────────────────────────────── */
 export default function App() {
   const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-
   const content = (
     <AuthProvider>
       <AppContent />
     </AuthProvider>
   );
-
-  return googleClientId ? (
-    <GoogleOAuthProvider clientId={googleClientId}>{content}</GoogleOAuthProvider>
-  ) : (
-    content
-  );
+  return googleClientId
+    ? <GoogleOAuthProvider clientId={googleClientId}>{content}</GoogleOAuthProvider>
+    : content;
 }

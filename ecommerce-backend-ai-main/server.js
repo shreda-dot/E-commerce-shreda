@@ -32,10 +32,28 @@ const PORT = process.env.PORT || 3000;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Middleware
+// CORS configuration.
+//
+// Single-service deployment (recommended): frontend and API are on the same
+// Render domain, so browser requests are same-origin — CORS headers are never
+// sent and credentials/cookies work automatically. No env var required.
+//
+// Two-service deployment: set FRONTEND_URL=https://your-frontend.onrender.com
+// in Render's environment variables. The handler below will then restrict
+// cross-origin requests to that exact origin.
+//
+// Local development: FRONTEND_URL is unset, so origin:true allows the Vite
+// dev-server (localhost:5173) to reach the backend (localhost:3000).
+const allowedOrigin = process.env.FRONTEND_URL;
 app.use(
   cors({
-    origin: true,
+    origin: allowedOrigin
+      ? (origin, cb) => {
+          // Allow server-to-server calls (no Origin header) and the specified frontend
+          if (!origin || origin === allowedOrigin) return cb(null, true);
+          cb(new Error(`CORS: origin ${origin} not allowed`));
+        }
+      : true,
     credentials: true,
   }),
 );
@@ -64,17 +82,23 @@ app.use("/api/*", (req, res) => {
     .json({ error: "API route not found", code: "API_NOT_FOUND" });
 });
 
-// Serve static files from the dist folder
-app.use(express.static(path.join(__dirname, "dist")));
+// Serve the compiled React app's static assets (JS, CSS, images …)
+// The frontend Vite build outputs directly into this folder.
+const DIST = path.join(__dirname, "dist");
+app.use(express.static(DIST));
 
-// Catch-all route to serve index.html for any unmatched routes
+// Wildcard catch-all: send index.html for every non-API, non-file route so
+// that React Router can handle navigation on the client side (e.g. /cart,
+// /account, /checkout won't 404 on a hard refresh).
 app.get("*", (req, res) => {
-  const indexPath = path.join(__dirname, "dist", "index.html");
+  const indexPath = path.join(DIST, "index.html");
   if (fs.existsSync(indexPath)) {
-    res.sendFile(indexPath);
-  } else {
-    res.status(404).send("index.html not found");
+    return res.sendFile(indexPath);
   }
+  // dist/index.html missing → the frontend hasn't been built yet
+  res.status(503).send(
+    "Frontend not built. Run: cd ecommerce-project-main && npm run build"
+  );
 });
 
 // Error handling middleware
