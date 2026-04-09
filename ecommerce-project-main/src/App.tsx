@@ -104,6 +104,17 @@ function AppContent() {
     }
   };
 
+  /**
+   * Called by checkout on successful payment.
+   * Explicitly clears BOTH React state and localStorage before re-fetching
+   * so items never reappear on refresh, even if the auth cookie expires.
+   */
+  const handleOrderPlaced = async () => {
+    setCartItems([]);
+    writeGuestCart([]);
+    await loadCart();
+  };
+
   useEffect(() => {
     if (!authLoading) loadCart();
   }, [authLoading, user]);
@@ -177,7 +188,7 @@ function AppContent() {
         <Routes>
           <Route path="/" element={<ShopPage onCartChanged={loadCart} search={search} isAuthenticated={Boolean(user)} />} />
           <Route path="/cart" element={<CartPage cartItems={cartItems} onCartChanged={loadCart} isAuthenticated={Boolean(user)} />} />
-          <Route path="/checkout" element={<MuiCheckoutPage onOrderPlaced={loadCart} />} />
+          <Route path="/checkout" element={<MuiCheckoutPage onOrderPlaced={handleOrderPlaced} />} />
           <Route path="/account" element={<AccountPage />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/auth" element={<AuthPage />} />
