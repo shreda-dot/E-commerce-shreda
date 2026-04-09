@@ -1,4 +1,5 @@
-import { Alert, Box, Button, Card, CardContent, CircularProgress, Snackbar, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, Card, CardContent, CircularProgress, Snackbar, Stack, TextField, Typography, IconButton, InputAdornment } from '@mui/material';
+import { Visibility, VisibilityOff } from '@mui/icons-material';
 import { GoogleLogin } from '@react-oauth/google';
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -25,7 +26,10 @@ export default function AuthPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [otpCode, setOtpCode] = useState('');
+  // New Loading State
+  const [loading, setLoading] = useState(false);
   const [notification, setNotification] = useState<{
     open: boolean;
     message: string;
@@ -54,6 +58,7 @@ export default function AuthPage() {
 
   const submit = async () => {
     try {
+      setLoading(true);
       setNotification((prev) => ({ ...prev, open: false, message: '' }));
       setErrorCode('');
       if (tab === 'login') {
@@ -63,18 +68,19 @@ export default function AuthPage() {
         const message = await signup(name, email, password);
         setNotification({ open: true, message, severity: 'success' });
         setStep('verifySignup');
-        return;
       }
-      navigate(redirectTo);
     } catch (error: unknown) {
       const parsed = getErrorMessage(error, 'Authentication failed');
       setNotification({ open: true, message: parsed.message, severity: 'error' });
       setErrorCode(parsed.code);
+    } finally {
+      setLoading(false);
     }
   };
 
   const verifyOtp = async () => {
     try {
+      setLoading(true);
       setNotification((prev) => ({ ...prev, open: false, message: '' }));
       setErrorCode('');
       await verifySignup(email, otpCode);
@@ -83,6 +89,8 @@ export default function AuthPage() {
       const parsed = getErrorMessage(error, 'OTP verification failed');
       setNotification({ open: true, message: parsed.message, severity: 'error' });
       setErrorCode(parsed.code);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -105,6 +113,7 @@ export default function AuthPage() {
 
   const submitResetPassword = async () => {
     try {
+      setLoading(true);
       setNotification((prev) => ({ ...prev, open: false, message: '' }));
       setErrorCode('');
       const message = await resetPassword(email, otpCode, newPassword);
@@ -115,7 +124,16 @@ export default function AuthPage() {
       const parsed = getErrorMessage(error, 'Unable to reset password');
       setNotification({ open: true, message: parsed.message, severity: 'error' });
       setErrorCode(parsed.code);
+    } finally {
+      setLoading(false);
     }
+  };
+
+  const hideBrowserPasswordToggle = {
+    '& input::-ms-reveal': { display: 'none' },
+    '& input::-ms-clear': { display: 'none' },
+    '& input::-webkit-contacts-auto-fill-button': { visibility: 'hidden', display: 'none !important', pointerEvents: 'none' },
+    '& input::-webkit-credentials-auto-fill-button': { visibility: 'hidden', display: 'none !important', pointerEvents: 'none' },
   };
 
   return (
@@ -136,6 +154,7 @@ export default function AuthPage() {
           <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
             <Button
               fullWidth
+              disabled={loading}
               variant={tab === 'login' ? 'contained' : 'outlined'}
               onClick={() => { setTab('login'); setStep('auth'); }}
               sx={{ borderRadius: 999 }}
@@ -144,6 +163,7 @@ export default function AuthPage() {
             </Button>
             <Button
               fullWidth
+              disabled={loading}
               variant={tab === 'signup' ? 'contained' : 'outlined'}
               onClick={() => { setTab('signup'); setStep('auth'); }}
               sx={{ borderRadius: 999 }}
@@ -158,14 +178,38 @@ export default function AuthPage() {
               </Typography>
             )}
             {tab === 'signup' && (
-              <TextField label="Full Name" value={name} onChange={(e) => setName(e.target.value)} fullWidth />
+              <TextField disabled={loading} label="Full Name" value={name} onChange={(e) => setName(e.target.value)} fullWidth />
             )}
-            <TextField label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} fullWidth />
+            <TextField disabled={loading} label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} fullWidth />
             {step === 'auth' && (
               <>
-                <TextField label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} fullWidth />
-                <Button variant="contained" onClick={submit} sx={{ alignSelf: 'stretch' }}>
-                  {tab === 'login' ? 'Login' : 'Create Account'}
+                <TextField 
+                  disabled={loading}
+                  label="Password" 
+                  type={showPassword ? 'text' : 'password'} 
+                  value={password} 
+                  onChange={(e) => setPassword(e.target.value)} 
+                  fullWidth 
+                  sx={hideBrowserPasswordToggle}
+                  slotProps={{
+                    input: {
+                      endAdornment: (
+                        <InputAdornment position="end">
+                          <IconButton disabled={loading} onClick={() => setShowPassword(!showPassword)} edge="end" aria-label="toggle password visibility">
+                            {showPassword ? <VisibilityOff /> : <Visibility />}
+                          </IconButton>
+                        </InputAdornment>
+                      ),
+                    },
+                  }}
+                />
+                <Button 
+                  variant="contained" 
+                  onClick={submit} 
+                  disabled={loading}
+                  sx={{ alignSelf: 'stretch', height: '42px' }}
+                >
+                  {loading ? <CircularProgress size={24} color="inherit" /> : (tab === 'login' ? 'Login' : 'Create Account')}
                 </Button>
               </>
             )}
@@ -173,7 +217,7 @@ export default function AuthPage() {
               <Button
                 variant="text"
                 onClick={requestForgotPassword}
-                disabled={requestingReset}
+                disabled={requestingReset || loading}
                 startIcon={requestingReset ? <CircularProgress size={14} /> : undefined}
               >
                 {requestingReset ? 'Requesting reset...' : 'Forgot Password?'}
@@ -182,47 +226,75 @@ export default function AuthPage() {
             {step === 'verifySignup' && (
               <>
                 <TextField
+                  disabled={loading}
                   label="Email OTP Code"
                   value={otpCode}
                   onChange={(e) => setOtpCode(e.target.value)}
                   fullWidth
                 />
-                <Button variant="outlined" onClick={verifyOtp}>
-                  Verify Email
+                <Button 
+                  variant="outlined" 
+                  onClick={verifyOtp}
+                  disabled={loading}
+                  sx={{ height: '42px' }}
+                >
+                  {loading ? <CircularProgress size={24} /> : 'Verify Email'}
                 </Button>
               </>
             )}
             {step === 'forgotPassword' && (
               <>
                 <TextField
+                  disabled={loading}
                   label="Reset Code"
                   value={otpCode}
                   onChange={(e) => setOtpCode(e.target.value)}
                   fullWidth
                 />
                 <TextField
+                  disabled={loading}
                   label="New Password"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   fullWidth
+                  sx={hideBrowserPasswordToggle}
+                  slotProps={{
+                    input: {
+                      endAdornment: (
+                        <InputAdornment position="end">
+                          <IconButton disabled={loading} onClick={() => setShowPassword(!showPassword)} edge="end" aria-label="toggle password visibility">
+                            {showPassword ? <VisibilityOff /> : <Visibility />}
+                          </IconButton>
+                        </InputAdornment>
+                      ),
+                    },
+                  }}
                 />
-                <Button variant="outlined" onClick={submitResetPassword}>
-                  Reset Password
+                <Button 
+                  variant="outlined" 
+                  onClick={submitResetPassword}
+                  disabled={loading}
+                  sx={{ height: '42px' }}
+                >
+                  {loading ? <CircularProgress size={24} /> : 'Reset Password'}
                 </Button>
               </>
             )}
             {googleClientIdConfigured ? (
-              <Box sx={{ display: 'grid', placeItems: 'center', pt: 1 }}>
+              <Box sx={{ display: 'grid', placeItems: 'center', pt: 1, pointerEvents: loading ? 'none' : 'auto', opacity: loading ? 0.6 : 1 }}>
                 <GoogleLogin
                   onSuccess={async (credentialResponse) => {
                     try {
+                      setLoading(true);
                       if (!credentialResponse.credential) return;
                       await loginWithGoogle(credentialResponse.credential);
                       navigate(redirectTo);
                     } catch (error: unknown) {
                       const parsed = getErrorMessage(error, 'Google login failed');
                       setNotification({ open: true, message: parsed.message, severity: 'error' });
+                    } finally {
+                      setLoading(false);
                     }
                   }}
                   onError={() => setNotification({ open: true, message: 'Google login failed', severity: 'error' })}
