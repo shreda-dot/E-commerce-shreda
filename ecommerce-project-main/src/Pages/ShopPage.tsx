@@ -18,7 +18,7 @@ import {
   Inventory as StockIcon,
   Category as CategoryIcon,
 } from "@mui/icons-material";
-import { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { api } from "../api";
 import type { CartItem, Product } from "../types";
 import RealisticLoader from "../components/RealisticLoader";
@@ -29,19 +29,17 @@ type Props = {
   isAuthenticated: boolean;
 };
 
+const GUEST_CART_KEY = "shreda_guest_cart_v1";
+
 const normalizeImage = (image: string) => {
   if (image.startsWith("http://") || image.startsWith("https://")) return image;
   return image.startsWith("/") ? image : `/${image}`;
 };
 
-const GUEST_CART_KEY = "shreda_guest_cart_v1";
-
 const readGuestCart = (): CartItem[] => {
   try {
     const raw = localStorage.getItem(GUEST_CART_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as CartItem[];
-    return Array.isArray(parsed) ? parsed : [];
+    return raw ? (JSON.parse(raw) as CartItem[]) : [];
   } catch {
     return [];
   }
@@ -60,7 +58,12 @@ function useScrollReveal(threshold = 0.12) {
     const el = ref.current;
     if (!el) return;
     const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) { setVisible(true); observer.disconnect(); } },
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
       { threshold }
     );
     observer.observe(el);
@@ -70,20 +73,20 @@ function useScrollReveal(threshold = 0.12) {
   return { ref, visible };
 }
 
-// ─── Category pills derived from product names ────────────────────────────────
+// ─── Category pills logic ─────────────────────────────────────────────────────
 const deriveCategory = (name: string): string => {
   const n = name.toLowerCase();
-  if (n.includes('phone') || n.includes('iphone') || n.includes('samsung') || n.includes('pixel')) return 'Phones';
-  if (n.includes('laptop') || n.includes('macbook') || n.includes('computer') || n.includes('pc')) return 'Computers';
-  if (n.includes('shoe') || n.includes('sneaker') || n.includes('boot') || n.includes('air max')) return 'Footwear';
-  if (n.includes('shirt') || n.includes('jean') || n.includes('hoodie') || n.includes('dress') || n.includes('cloth')) return 'Clothing';
-  if (n.includes('watch') || n.includes('bag') || n.includes('wallet') || n.includes('sunglasses')) return 'Accessories';
-  if (n.includes('tv') || n.includes('monitor') || n.includes('speaker') || n.includes('headphone') || n.includes('earbud')) return 'Electronics';
-  if (n.includes('chair') || n.includes('desk') || n.includes('sofa') || n.includes('furniture')) return 'Furniture';
+  if (/phone|iphone|samsung|pixel/.test(n)) return 'Phones';
+  if (/laptop|macbook|computer|pc/.test(n)) return 'Computers';
+  if (/shoe|sneaker|boot|air max/.test(n)) return 'Footwear';
+  if (/shirt|jean|hoodie|dress|cloth/.test(n)) return 'Clothing';
+  if (/watch|bag|wallet|sunglasses/.test(n)) return 'Accessories';
+  if (/tv|monitor|speaker|headphone|earbud/.test(n)) return 'Electronics';
+  if (/chair|desk|sofa|furniture/.test(n)) return 'Furniture';
   return 'Other';
 };
 
-// ─── Individual Product Card ─────────────────────────────────────────────────
+// ─── Individual Product Card (Memoized) ──────────────────────────────────────
 interface ProductCardProps {
   product: Product;
   qty: number;
@@ -93,14 +96,14 @@ interface ProductCardProps {
   index: number;
 }
 
-function ProductCard({ product, qty, onQtyChange, onAddToCart, featured = false, index }: ProductCardProps) {
+const ProductCard = React.memo(({ product, qty, onQtyChange, onAddToCart, featured = false, index }: ProductCardProps) => {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const { ref, visible } = useScrollReveal();
+  
   const isSoldOut = !product.stock || product.stock === 0;
   const isLowStock = product.stock < 5 && product.stock > 0;
 
-  // Bento sizing: every 7th card is featured (wide), every 5th is tall
   const isWide = featured || index % 7 === 0;
   const isTall = !isWide && index % 5 === 0;
 
@@ -112,7 +115,7 @@ function ProductCard({ product, qty, onQtyChange, onAddToCart, featured = false,
         gridRow: isTall ? { xs: 'span 1', md: 'span 2' } : 'span 1',
         opacity: visible ? 1 : 0,
         transform: visible ? 'translateY(0) scale(1)' : 'translateY(32px) scale(0.97)',
-        transition: `opacity 0.55s ease ${index * 0.06}s, transform 0.55s ease ${index * 0.06}s`,
+        transition: `opacity 0.55s ease ${index * 0.04}s, transform 0.55s ease ${index * 0.04}s`,
       }}
     >
       <Box
@@ -124,36 +127,24 @@ function ProductCard({ product, qty, onQtyChange, onAddToCart, featured = false,
           borderRadius: '20px',
           overflow: 'hidden',
           position: 'relative',
-          cursor: 'pointer',
-          background: isDark
-            ? 'rgba(255,255,255,0.04)'
-            : 'rgba(255,255,255,0.72)',
+          background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.72)',
           backdropFilter: 'blur(16px)',
-          WebkitBackdropFilter: 'blur(16px)',
-          border: isDark
-            ? '1px solid rgba(255,255,255,0.08)'
-            : '1px solid rgba(255,255,255,0.9)',
-          boxShadow: isDark
-            ? '0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.06)'
-            : '0 4px 24px rgba(0,0,0,0.06), 0 1px 0 rgba(255,255,255,1) inset',
+          border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(255,255,255,0.9)',
+          boxShadow: isDark ? '0 8px 32px rgba(0,0,0,0.4)' : '0 4px 24px rgba(0,0,0,0.06)',
           transition: 'transform 0.3s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.3s ease',
           '&:hover': {
-            transform: 'translateY(-6px) scale(1.015)',
-            boxShadow: isDark
-              ? '0 20px 60px rgba(0,0,0,0.6), 0 0 0 1px rgba(99,179,237,0.3), inset 0 1px 0 rgba(255,255,255,0.1)'
-              : '0 16px 48px rgba(0,0,0,0.12), 0 0 0 1px rgba(59,130,246,0.2)',
+            transform: 'translateY(-6px) scale(1.01)',
+            boxShadow: isDark ? '0 20px 60px rgba(0,0,0,0.6)' : '0 16px 48px rgba(0,0,0,0.12)',
           },
         }}
       >
-        {/* Image area */}
         <Box
           sx={{
             flex: isTall ? '1 1 60%' : '0 0 auto',
             height: isWide ? 240 : isTall ? '55%' : 200,
             position: 'relative',
-            overflow: 'hidden',
-            background: isDark
-              ? 'linear-gradient(135deg, rgba(30,40,60,0.8) 0%, rgba(15,25,45,0.9) 100%)'
+            background: isDark 
+              ? 'linear-gradient(135deg, rgba(30,40,60,0.8) 0%, rgba(15,25,45,0.9) 100%)' 
               : 'linear-gradient(135deg, #f8faff 0%, #eef3ff 100%)',
           }}
         >
@@ -161,6 +152,7 @@ function ProductCard({ product, qty, onQtyChange, onAddToCart, featured = false,
             component="img"
             src={normalizeImage(product.image)}
             alt={product.name}
+            loading="lazy"
             sx={{
               position: 'absolute',
               inset: 0,
@@ -169,55 +161,29 @@ function ProductCard({ product, qty, onQtyChange, onAddToCart, featured = false,
               objectFit: 'contain',
               padding: '16px',
               transition: 'transform 0.4s ease',
-              '.MuiBox-root:hover &': { transform: 'scale(1.08)' },
+              '&:hover': { transform: 'scale(1.08)' },
             }}
           />
-
-          {/* Badges */}
           <Stack direction="row" spacing={0.75} sx={{ position: 'absolute', top: 12, left: 12 }}>
             {isLowStock && (
               <Chip
                 icon={<FireIcon sx={{ fontSize: '0.75rem !important', color: '#ff4d4d !important' }} />}
                 label="Low Stock"
                 size="small"
-                sx={{ height: 22, fontSize: '0.65rem', fontWeight: 800, bgcolor: 'rgba(255,77,77,0.15)', color: '#ff4d4d', border: '1px solid rgba(255,77,77,0.3)', backdropFilter: 'blur(8px)', '& .MuiChip-icon': { ml: '6px' } }}
+                sx={{ height: 22, fontSize: '0.65rem', fontWeight: 800, bgcolor: 'rgba(255,77,77,0.15)', color: '#ff4d4d' }}
               />
             )}
             {isSoldOut && (
               <Chip
                 label="Sold Out"
                 size="small"
-                sx={{ height: 22, fontSize: '0.65rem', fontWeight: 800, bgcolor: 'rgba(100,100,100,0.2)', color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.35)', border: '1px solid rgba(128,128,128,0.2)', backdropFilter: 'blur(8px)' }}
+                sx={{ height: 22, fontSize: '0.65rem', fontWeight: 800, bgcolor: 'rgba(100,100,100,0.2)', color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.35)' }}
               />
             )}
           </Stack>
-
-          {/* Rating badge top-right */}
-          <Box
-            sx={{
-              position: 'absolute',
-              top: 12,
-              right: 12,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 0.3,
-              px: 1,
-              py: 0.4,
-              borderRadius: '20px',
-              bgcolor: 'rgba(255,196,0,0.15)',
-              border: '1px solid rgba(255,196,0,0.3)',
-              backdropFilter: 'blur(8px)',
-            }}
-          >
-            <StarIcon sx={{ fontSize: '0.75rem', color: '#f59e0b' }} />
-            <Typography sx={{ fontSize: '0.7rem', fontWeight: 800, color: '#f59e0b' }}>
-              {product.rating.stars.toFixed(1)}
-            </Typography>
-          </Box>
         </Box>
 
-        {/* Content area */}
-        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', p: { xs: 1.75, md: 2 } }}>
+        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', p: 2 }}>
           <Typography
             sx={{
               fontWeight: 700,
@@ -243,15 +209,8 @@ function ProductCard({ product, qty, onQtyChange, onAddToCart, featured = false,
             </Typography>
           </Stack>
 
-          {/* Price row + stock */}
           <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'flex-end', mt: 1.25, mb: 1.25 }}>
-            <Typography sx={{
-              fontWeight: 900,
-              fontSize: isWide ? '1.4rem' : '1.1rem',
-              color: isDark ? '#60a5fa' : '#1d4ed8',
-              letterSpacing: '-0.02em',
-              lineHeight: 1,
-            }}>
+            <Typography sx={{ fontWeight: 900, fontSize: isWide ? '1.4rem' : '1.1rem', color: isDark ? '#60a5fa' : '#1d4ed8' }}>
               ${(product.priceCents / 100).toFixed(2)}
             </Typography>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4 }}>
@@ -262,7 +221,6 @@ function ProductCard({ product, qty, onQtyChange, onAddToCart, featured = false,
             </Box>
           </Stack>
 
-          {/* Actions */}
           <Stack direction="row" spacing={0.75}>
             <TextField
               select
@@ -271,19 +229,12 @@ function ProductCard({ product, qty, onQtyChange, onAddToCart, featured = false,
               value={qty}
               onChange={(e) => onQtyChange(product.id, Number(e.target.value))}
               sx={{
-                width: 56,
-                '& .MuiOutlinedInput-root': {
-                  borderRadius: '10px',
-                  fontSize: '0.82rem',
-                  bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-                  '& fieldset': { borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' },
-                  '&:hover fieldset': { borderColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)' },
-                },
-                '& .MuiSelect-select': { py: '7px', px: '8px' },
+                width: 60,
+                '& .MuiOutlinedInput-root': { borderRadius: '10px', fontSize: '0.82rem' },
               }}
             >
               {[...Array(Math.max(0, Math.min(product.stock || 0, 10))).keys()].map((i) => (
-                <MenuItem key={i + 1} value={i + 1} sx={{ fontSize: '0.82rem' }}>{i + 1}</MenuItem>
+                <MenuItem key={i + 1} value={i + 1}>{i + 1}</MenuItem>
               ))}
             </TextField>
 
@@ -291,35 +242,23 @@ function ProductCard({ product, qty, onQtyChange, onAddToCart, featured = false,
               fullWidth
               variant="contained"
               disabled={isSoldOut}
-              startIcon={<AddCartIcon sx={{ fontSize: '0.95rem !important' }} />}
+              startIcon={<AddCartIcon />}
               onClick={() => onAddToCart(product.id, product.name)}
               sx={{
                 borderRadius: '10px',
                 fontWeight: 700,
-                fontSize: '0.8rem',
                 textTransform: 'none',
-                py: '7px',
-                background: isSoldOut
-                  ? undefined
-                  : 'linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%)',
-                boxShadow: isSoldOut ? 'none' : '0 2px 12px rgba(59,130,246,0.35)',
-                transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-                '&:hover:not(:disabled)': {
-                  transform: 'scale(1.03)',
-                  boxShadow: '0 4px 20px rgba(59,130,246,0.5)',
-                  background: 'linear-gradient(135deg, #1e40af 0%, #2563eb 100%)',
-                },
-                '&:active:not(:disabled)': { transform: 'scale(0.98)' },
+                background: isSoldOut ? undefined : 'linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%)',
               }}
             >
-              Add to Cart
+              Add
             </Button>
           </Stack>
         </Box>
       </Box>
     </Box>
   );
-}
+});
 
 // ─── Main ShopPage ────────────────────────────────────────────────────────────
 export default function ShopPage({ onCartChanged, search, isAuthenticated }: Props) {
@@ -335,12 +274,14 @@ export default function ShopPage({ onCartChanged, search, isAuthenticated }: Pro
     open: boolean; message: string; severity: 'success' | 'error' | 'info';
   }>({ open: false, message: "", severity: "info" });
 
-  // Track scroll to show floating pill bar
   useEffect(() => {
-    const onScroll = () => setPillStuck(window.scrollY > 140);
+    const onScroll = () => {
+      const isSticky = window.scrollY > 140;
+      if (isSticky !== pillStuck) setPillStuck(isSticky);
+    };
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
-  }, []);
+  }, [pillStuck]);
 
   const fetchProducts = useCallback(async () => {
     try {
@@ -358,32 +299,25 @@ export default function ShopPage({ onCartChanged, search, isAuthenticated }: Pro
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
 
-  useEffect(() => {
-    if (!notification.open) return;
-    const t = window.setTimeout(() => setNotification((p) => ({ ...p, open: false })), 5000);
-    return () => window.clearTimeout(t);
-  }, [notification.open]);
+  const categories = useMemo(() => 
+    ['All', ...Array.from(new Set(products.map(p => deriveCategory(p.name))))]
+  , [products]);
 
-  // Derive categories from products
-  const categories = ['All', ...Array.from(new Set(products.map(p => deriveCategory(p.name))))];
-
-  const filteredProducts = activeCategory === 'All'
-    ? products
-    : products.filter(p => deriveCategory(p.name) === activeCategory);
+  const filteredProducts = useMemo(() => 
+    activeCategory === 'All' ? products : products.filter(p => deriveCategory(p.name) === activeCategory)
+  , [products, activeCategory]);
 
   const addToCart = async (productId: string, name: string) => {
     const qty = quantities[productId] || 1;
     const product = products.find((item) => item.id === productId);
+    
     try {
       if (!isAuthenticated) {
         const guestCart = readGuestCart();
         const existingIndex = guestCart.findIndex((item) => item.productId === productId);
         if (existingIndex >= 0) {
           const next = guestCart[existingIndex].quantity + qty;
-          guestCart[existingIndex] = {
-            ...guestCart[existingIndex],
-            quantity: product ? Math.min(next, product.stock || next) : next,
-          };
+          guestCart[existingIndex].quantity = product ? Math.min(next, product.stock || next) : next;
         } else {
           guestCart.push({ id: Date.now(), productId, quantity: qty, deliveryOptionId: "1", product: product || null });
         }
@@ -392,233 +326,99 @@ export default function ShopPage({ onCartChanged, search, isAuthenticated }: Pro
         await api.post("/api/cart-items", { productId, quantity: qty });
       }
       await onCartChanged();
-      setNotification({ open: true, message: `${qty} × ${name} added to cart!`, severity: "success" });
+      setNotification({ open: true, message: `${qty} × ${name} added!`, severity: "success" });
     } catch {
-      setNotification({ open: true, message: "Failed to add item to cart.", severity: "error" });
+      setNotification({ open: true, message: "Failed to add item.", severity: "error" });
     }
   };
 
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        position: 'relative',
-        pb: 6,
-        // Subtle noise-like background texture
-        background: isDark
-          ? 'radial-gradient(ellipse at 20% 0%, rgba(30,58,138,0.15) 0%, transparent 50%), radial-gradient(ellipse at 80% 100%, rgba(30,58,138,0.1) 0%, transparent 50%)'
-          : 'radial-gradient(ellipse at 20% 0%, rgba(219,234,254,0.5) 0%, transparent 50%), radial-gradient(ellipse at 80% 100%, rgba(224,231,255,0.4) 0%, transparent 50%)',
-      }}
-    >
-      {/* ── Page Header ── */}
-      <Box sx={{ pt: { xs: 3, md: 5 }, pb: { xs: 2, md: 3 }, px: { xs: 1.5, sm: 3, md: 0 } }}>
-        <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'flex-end' }, mb: 1 }}>
-          <Box>
-            <Typography
-              sx={{
-                fontSize: { xs: '0.65rem', md: '0.7rem' },
-                fontWeight: 800,
-                letterSpacing: '0.35em',
-                color: isDark ? 'rgba(99,179,237,0.7)' : 'rgba(29,78,216,0.6)',
-                textTransform: 'uppercase',
-                mb: 0.5,
-              }}
-            >
-              {search ? `Search Results` : `Beat the Odds — Shreda Store`}
-            </Typography>
-            <Typography
-              sx={{
-                fontWeight: 900,
-                fontSize: { xs: '2rem', sm: '2.6rem', md: '3.2rem' },
-                letterSpacing: '-0.035em',
-                lineHeight: 0.95,
-                color: isDark ? '#f1f5f9' : '#0f172a',
-              }}
-            >
-              {search ? `"${search}"` : 'Curated\nfor You'}
-            </Typography>
-          </Box>
-
-          <Box sx={{ mt: { xs: 1.5, sm: 0 }, display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Box sx={{
-              px: 2, py: 0.75, borderRadius: '20px',
-              border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.08)',
-              bgcolor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.7)',
-              backdropFilter: 'blur(8px)',
-            }}>
-              <Typography sx={{ fontSize: '0.78rem', fontWeight: 700, color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.45)' }}>
-                {filteredProducts.length} products
-              </Typography>
-            </Box>
-          </Box>
-        </Stack>
+    <Box sx={{ 
+      minHeight: '100vh', 
+      pb: 6,
+      background: isDark 
+        ? 'radial-gradient(ellipse at 20% 0%, rgba(30,58,138,0.1) 0%, transparent 50%)' 
+        : 'radial-gradient(ellipse at 20% 0%, rgba(219,234,254,0.3) 0%, transparent 50%)',
+    }}>
+      <Box sx={{ pt: { xs: 3, md: 5 }, pb: 2, px: { xs: 2, md: 4 } }}>
+        <Typography variant="overline" sx={{ fontWeight: 800, color: 'primary.main', letterSpacing: 2 }}>
+          {search ? 'Search Results' : 'Shreda Curated'}
+        </Typography>
+        <Typography variant="h2" sx={{ fontWeight: 900, mb: 1, fontSize: { xs: '2.2rem', md: '3.5rem' } }}>
+          {search ? `"${search}"` : 'The Collection'}
+        </Typography>
       </Box>
 
-      {/* ── Floating Pill Category Filter ── */}
       {!loading && products.length > 0 && (
-        <Box
-          sx={{
-            position: pillStuck ? 'fixed' : 'sticky',
-            top: pillStuck ? 16 : 0,
-            left: 0,
-            right: 0,
-            zIndex: 100,
-            display: 'flex',
-            justifyContent: 'center',
-            pointerEvents: 'none',
-            mb: pillStuck ? 0 : 3,
-            transition: 'top 0.3s ease',
-          }}
-        >
-          <Box
-            sx={{
-              pointerEvents: 'auto',
-              display: 'flex',
-              gap: 0.75,
-              flexWrap: 'nowrap',
+        <Box sx={{ 
+          position: pillStuck ? 'fixed' : 'relative', 
+          top: pillStuck ? 20 : 0, 
+          zIndex: 1100, 
+          width: '100%', 
+          display: 'flex', 
+          justifyContent: 'center',
+          transition: 'all 0.3s ease'
+        }}>
+          <Stack 
+            direction="row" 
+            spacing={1} 
+            sx={{ 
+              p: 1, 
+              borderRadius: '40px', 
+              bgcolor: isDark ? 'rgba(15,23,42,0.8)' : 'rgba(255,255,255,0.8)',
+              backdropFilter: 'blur(12px)',
+              boxShadow: 3,
+              maxWidth: '90vw',
               overflowX: 'auto',
-              px: 2,
-              py: 1,
-              borderRadius: '40px',
-              background: isDark
-                ? 'rgba(10,20,40,0.85)'
-                : 'rgba(255,255,255,0.88)',
-              backdropFilter: 'blur(20px)',
-              WebkitBackdropFilter: 'blur(20px)',
-              border: isDark
-                ? '1px solid rgba(255,255,255,0.1)'
-                : '1px solid rgba(0,0,0,0.08)',
-              boxShadow: isDark
-                ? '0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(99,179,237,0.1)'
-                : '0 8px 32px rgba(0,0,0,0.1), 0 0 0 1px rgba(255,255,255,0.9)',
-              scrollbarWidth: 'none',
-              '&::-webkit-scrollbar': { display: 'none' },
+              scrollbarWidth: 'none'
             }}
           >
-            {categories.map((cat) => {
-              const isActive = cat === activeCategory;
-              return (
-                <Box
-                  key={cat}
-                  component="button"
-                  onClick={() => setActiveCategory(cat)}
-                  sx={{
-                    border: 'none',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                    borderRadius: '20px',
-                    px: 1.75,
-                    py: 0.6,
-                    fontSize: '0.78rem',
-                    fontWeight: isActive ? 800 : 600,
-                    fontFamily: 'inherit',
-                    transition: 'all 0.2s ease',
-                    background: isActive
-                      ? 'linear-gradient(135deg, #1d4ed8, #3b82f6)'
-                      : 'transparent',
-                    color: isActive
-                      ? '#ffffff'
-                      : isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.5)',
-                    boxShadow: isActive ? '0 2px 10px rgba(59,130,246,0.4)' : 'none',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 0.4,
-                    '&:hover': {
-                      color: isActive ? '#fff' : isDark ? 'rgba(255,255,255,0.85)' : '#0f172a',
-                      background: isActive
-                        ? 'linear-gradient(135deg, #1e40af, #2563eb)'
-                        : isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-                    },
-                  }}
-                >
-                  {cat === 'All' && <CategoryIcon sx={{ fontSize: '0.8rem' }} />}
-                  {cat}
-                </Box>
-              );
-            })}
-          </Box>
+            {categories.map((cat) => (
+              <Button
+                key={cat}
+                size="small"
+                variant={activeCategory === cat ? "contained" : "text"}
+                onClick={() => setActiveCategory(cat)}
+                sx={{ borderRadius: '20px', px: 2, whiteSpace: 'nowrap' }}
+              >
+                {cat}
+              </Button>
+            ))}
+          </Stack>
         </Box>
       )}
 
-      {/* ── Main Content ── */}
-      <Box sx={{ px: { xs: 1.5, sm: 3, md: 0 }, mt: pillStuck ? 3 : 0 }}>
+      <Box sx={{ px: { xs: 2, md: 4 }, mt: 4 }}>
         {loading ? (
-          <Box sx={{ pt: 6 }}>
-            <RealisticLoader message="Fetching the best products..." />
-          </Box>
+          <RealisticLoader message="Syncing catalog..." />
         ) : filteredProducts.length === 0 ? (
-          <Box
-            sx={{
-              textAlign: 'center',
-              py: 12,
-              borderRadius: '24px',
-              border: isDark ? '1px dashed rgba(255,255,255,0.1)' : '1px dashed rgba(0,0,0,0.1)',
-              bgcolor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)',
-            }}
-          >
-            <Typography sx={{ fontSize: '2.5rem', mb: 1 }}>🔍</Typography>
-            <Typography variant="h5" sx={{ fontWeight: 800, color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.35)', mb: 1 }}>
-              No products found
-            </Typography>
-            <Typography variant="body2" sx={{ color: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)', mb: 3 }}>
-              {activeCategory !== 'All' ? `Try a different category or ` : ''}clear your search
-            </Typography>
-            <Stack direction="row" spacing={1.5} sx={{ justifyContent: 'center' }}>
-              {activeCategory !== 'All' && (
-                <Button variant="outlined" sx={{ borderRadius: 20, textTransform: 'none', fontWeight: 700 }} onClick={() => setActiveCategory('All')}>
-                  All Categories
-                </Button>
-              )}
-              <Button variant="contained" sx={{ borderRadius: 20, textTransform: 'none', fontWeight: 700 }} onClick={() => (window.location.href = '/')}>
-                Clear Search
-              </Button>
-            </Stack>
-          </Box>
+          <Alert severity="info" sx={{ borderRadius: 4 }}>No items found in this category.</Alert>
         ) : (
-          // ── Bento Grid ──────────────────────────────────────────────────
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: {
-                xs: 'repeat(1, 1fr)',
-                sm: 'repeat(2, 1fr)',
-                md: 'repeat(3, 1fr)',
-                lg: 'repeat(4, 1fr)',
-              },
-              gap: { xs: 1.5, md: 2 },
-              alignItems: 'start',
-            }}
-          >
-            {filteredProducts.map((product, index) => (
+          <Box sx={{ 
+            display: 'grid', 
+            gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)', lg: 'repeat(4, 1fr)' },
+            gap: 2 
+          }}>
+            {filteredProducts.map((product, idx) => (
               <ProductCard
                 key={product.id}
                 product={product}
+                index={idx}
                 qty={quantities[product.id] || 1}
-                onQtyChange={(id, val) => setQuantities((p) => ({ ...p, [id]: val }))}
+                onQtyChange={(id, val) => setQuantities(q => ({ ...q, [id]: val }))}
                 onAddToCart={addToCart}
-                index={index}
               />
             ))}
           </Box>
         )}
       </Box>
 
-      {/* ── Snackbar ── */}
       <Snackbar
         open={notification.open}
-        autoHideDuration={5000}
-        onClose={() => setNotification((p) => ({ ...p, open: false }))}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        autoHideDuration={4000}
+        onClose={() => setNotification(n => ({ ...n, open: false }))}
       >
-        <Alert
-          severity={notification.severity}
-          variant="filled"
-          sx={{
-            borderRadius: '12px',
-            fontWeight: 700,
-            boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
-          }}
-        >
+        <Alert severity={notification.severity} variant="filled" sx={{ borderRadius: 3 }}>
           {notification.message}
         </Alert>
       </Snackbar>
