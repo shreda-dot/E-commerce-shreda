@@ -3,13 +3,15 @@ import { CartItem } from '../models/CartItem.js';
 import { Product } from '../models/Product.js';
 import { DeliveryOption } from '../models/DeliveryOption.js';
 import { badRequest, internalError, notFound, parsePositiveInt } from '../utils/http.js';
+import { requireAuth } from '../middleware/auth.js';
 
 const router = express.Router();
+router.use(requireAuth);
 
 router.get('/', async (req, res) => {
   try {
     const expand = req.query.expand;
-    let cartItems = await CartItem.findAll();
+    let cartItems = await CartItem.findAll({ where: { userId: req.user.id } });
 
     if (expand === 'product') {
       const productIds = [...new Set(cartItems.map((item) => item.productId))];
@@ -46,12 +48,17 @@ router.post('/', async (req, res) => {
       return badRequest(res, 'Quantity must be an integer between 1 and 10', 'INVALID_QUANTITY');
     }
 
-    let cartItem = await CartItem.findOne({ where: { productId } });
+    let cartItem = await CartItem.findOne({ where: { userId: req.user.id, productId } });
     if (cartItem) {
       cartItem.quantity = Math.min(cartItem.quantity + normalizedQuantity, 10);
       await cartItem.save();
     } else {
-      cartItem = await CartItem.create({ productId, quantity: normalizedQuantity, deliveryOptionId: '1' });
+      cartItem = await CartItem.create({
+        userId: req.user.id,
+        productId,
+        quantity: normalizedQuantity,
+        deliveryOptionId: '1',
+      });
     }
 
     res.status(201).json(cartItem);
@@ -65,7 +72,7 @@ router.put('/:productId', async (req, res) => {
     const { productId } = req.params;
     const { quantity, deliveryOptionId } = req.body;
 
-    const cartItem = await CartItem.findOne({ where: { productId } });
+    const cartItem = await CartItem.findOne({ where: { userId: req.user.id, productId } });
     if (!cartItem) {
       return notFound(res, 'Cart item not found', 'CART_ITEM_NOT_FOUND');
     }
@@ -97,13 +104,53 @@ router.delete('/:productId', async (req, res) => {
   try {
     const { productId } = req.params;
 
-    const cartItem = await CartItem.findOne({ where: { productId } });
+    const cartItem = await CartItem.findOne({ where: { userId: req.user.id, productId } });
     if (!cartItem) {
       return notFound(res, 'Cart item not found', 'CART_ITEM_NOT_FOUND');
     }
 
     await cartItem.destroy();
     res.status(204).send();
+  } catch (error) {
+    return internalError(res, error);
+  }
+});
+
+router.post('/merge', async (req, res) => {
+  try {
+    const guestItems = Array.isArray(req.body?.items) ? req.body.items : [];
+    if (guestItems.length === 0) {
+      return res.json({ merged: 0 });
+    }
+
+    let merged = 0;
+    for (const item of guestItems) {
+      const productId = typeof item?.productId === 'string' ? item.productId : '';
+      const quantity = Number(item?.quantity);
+      if (!productId || !Number.isInteger(quantity) || quantity < 1) {
+        continue;
+      }
+
+      const product = await Product.findByPk(productId);
+      if (!product) continue;
+      const clampedQty = Math.min(quantity, 10);
+
+      const existing = await CartItem.findOne({ where: { userId: req.user.id, productId } });
+      if (existing) {
+        existing.quantity = Math.min(existing.quantity + clampedQty, 10);
+        await existing.save();
+      } else {
+        await CartItem.create({
+          userId: req.user.id,
+          productId,
+          quantity: clampedQty,
+          deliveryOptionId: '1',
+        });
+      }
+      merged += 1;
+    }
+
+    return res.json({ merged });
   } catch (error) {
     return internalError(res, error);
   }

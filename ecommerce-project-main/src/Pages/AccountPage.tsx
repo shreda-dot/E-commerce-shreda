@@ -9,8 +9,6 @@ import {
   Skeleton,
   Snackbar,
   Stack,
-  Tab,
-  Tabs,
   TextField,
   Tooltip,
   Typography,
@@ -23,6 +21,8 @@ import {
   EditOutlined as EditIcon,
   LocalShippingOutlined as ShippedIcon,
   ReceiptLongOutlined as OrdersIcon,
+  RoomServiceOutlined as TrackingIcon,
+  SettingsOutlined as SettingsIcon,
   Storefront as StoreIcon,
   TrendingUp as TrendingIcon,
   HourglassTopOutlined as PendingIcon,
@@ -381,11 +381,31 @@ export default function AccountPage() {
 
   useEffect(() => {
     if (!user) return;
-    setOrdersLoading(true);
-    api.get<OrderItem[]>('/api/orders?mine=true')
-      .then(r => setOrders(r.data))
-      .catch(() => setOrders([]))
-      .finally(() => setOrdersLoading(false));
+    let cancelled = false;
+    const loadOrders = async (showLoader = false) => {
+      if (showLoader) setOrdersLoading(true);
+      try {
+        const r = await api.get<OrderItem[]>('/api/orders?mine=true');
+        if (!cancelled) setOrders(r.data);
+      } catch {
+        if (!cancelled) setOrders([]);
+      } finally {
+        if (!cancelled && showLoader) setOrdersLoading(false);
+      }
+    };
+
+    void loadOrders(true);
+    const intervalId = window.setInterval(() => {
+      void loadOrders(false);
+    }, 15000);
+    const onFocus = () => void loadOrders(false);
+    window.addEventListener('focus', onFocus);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', onFocus);
+    };
   }, [user?.id]);
 
   // ── Stats ──────────────────────────────────────────────────────────────────
@@ -395,6 +415,14 @@ export default function AccountPage() {
     delivered:  orders.filter(o => o.status === 'delivered').length,
     cancelled:  orders.filter(o => o.status === 'cancelled').length,
   }), [orders]);
+  const sortedOrders = useMemo(
+    () => orders.slice().sort((a, b) => b.orderTimeMs - a.orderTimeMs),
+    [orders]
+  );
+  const trackedOrder = useMemo(
+    () => sortedOrders.find((o) => ["pending", "processing", "shipped"].includes(o.status ?? "pending")) ?? sortedOrders[0],
+    [sortedOrders]
+  );
 
   // ── Profile actions ────────────────────────────────────────────────────────
   const uploadImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -551,8 +579,10 @@ export default function AccountPage() {
           }}
         >
           {[
-            { label: 'Orders',  icon: <OrdersIcon  sx={{ fontSize: 16 }} /> },
-            { label: 'Profile', icon: <ProfileIcon sx={{ fontSize: 16 }} /> },
+            { label: 'Overview', icon: <ProfileIcon sx={{ fontSize: 16 }} /> },
+            { label: 'Order History',  icon: <OrdersIcon sx={{ fontSize: 16 }} /> },
+            { label: 'Tracking', icon: <TrackingIcon sx={{ fontSize: 16 }} /> },
+            { label: 'Settings', icon: <SettingsIcon sx={{ fontSize: 16 }} /> },
           ].map((t2, i) => (
             <Box
               key={t2.label}
@@ -587,8 +617,43 @@ export default function AccountPage() {
         </Box>
       </Box>
 
-      {/* ── Tab: Orders ── */}
+      {/* ── Tab: Profile Overview ── */}
       {tab === 0 && (
+        <Box sx={{ px: { xs: 2, md: 0 } }}>
+          <GlassCard sx={{ p: { xs: 2.5, md: 3.5 } }}>
+            <Stack spacing={2.5}>
+              <Typography sx={{ fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.25em', color: t.subColor, textTransform: 'uppercase' }}>
+                Profile Overview
+              </Typography>
+              <Stack direction={{ xs: "column", md: "row" }} spacing={2.5} sx={{ alignItems: { xs: "flex-start", md: "center" }, justifyContent: "space-between" }}>
+                <Stack direction="row" spacing={2} sx={{ alignItems: "center" }}>
+                  <Avatar src={profileImage} sx={{ width: 64, height: 64, fontWeight: 900, fontSize: '1.45rem', background: 'linear-gradient(135deg, #1d4ed8, #3b82f6)' }}>
+                    {user.name?.slice(0, 1).toUpperCase()}
+                  </Avatar>
+                  <Box>
+                    <Typography sx={{ fontWeight: 800, fontSize: "1.1rem", color: t.headingColor }}>{user.name}</Typography>
+                    <Typography sx={{ color: t.subColor, fontSize: "0.82rem" }}>{user.email}</Typography>
+                    <Typography sx={{ color: t.subColor, fontSize: "0.75rem", mt: 0.35 }}>
+                      Member since {new Date().getFullYear()}
+                    </Typography>
+                  </Box>
+                </Stack>
+                <Stack direction="row" spacing={1}>
+                  <Button onClick={() => setTab(1)} variant="outlined" sx={{ borderRadius: "10px", textTransform: "none", fontWeight: 700 }}>
+                    View Orders
+                  </Button>
+                  <Button onClick={() => setTab(3)} variant="contained" sx={{ borderRadius: "10px", textTransform: "none", fontWeight: 700 }}>
+                    Manage Settings
+                  </Button>
+                </Stack>
+              </Stack>
+            </Stack>
+          </GlassCard>
+        </Box>
+      )}
+
+      {/* ── Tab: Order History ── */}
+      {tab === 1 && (
         <Box sx={{ px: { xs: 2, md: 0 } }}>
           {ordersLoading ? (
             <Stack spacing={2}>
@@ -626,19 +691,50 @@ export default function AccountPage() {
             </GlassCard>
           ) : (
             <Stack spacing={2}>
-              {orders
-                .slice()
-                .sort((a, b) => b.orderTimeMs - a.orderTimeMs)
-                .map((order, i) => (
-                  <OrderCard key={order.id} order={order} index={i} />
-                ))}
+              {sortedOrders.map((order, i) => (
+                <OrderCard key={order.id} order={order} index={i} />
+              ))}
             </Stack>
           )}
         </Box>
       )}
 
-      {/* ── Tab: Profile ── */}
-      {tab === 1 && (
+      {/* ── Tab: Order Tracking ── */}
+      {tab === 2 && (
+        <Box sx={{ px: { xs: 2, md: 0 } }}>
+          <GlassCard sx={{ p: { xs: 2.5, md: 3.5 } }}>
+            {!trackedOrder ? (
+              <Typography sx={{ color: t.subColor }}>No order available for tracking yet.</Typography>
+            ) : (
+              <Stack spacing={2}>
+                <Typography sx={{ fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.25em', color: t.subColor, textTransform: 'uppercase' }}>
+                  Live Order Tracking
+                </Typography>
+                <Typography sx={{ fontWeight: 900, color: t.headingColor, fontSize: { xs: "1.2rem", md: "1.45rem" } }}>
+                  Order #{trackedOrder.id.slice(0, 8).toUpperCase()}
+                </Typography>
+                <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25} sx={{ alignItems: { xs: "flex-start", sm: "center" } }}>
+                  <Chip
+                    icon={<Box sx={{ color: `${STATUS_CONFIG[trackedOrder.status ?? 'pending'].color} !important`, display: 'flex' }}>{STATUS_CONFIG[trackedOrder.status ?? 'pending'].icon}</Box>}
+                    label={STATUS_CONFIG[trackedOrder.status ?? 'pending'].label}
+                    sx={{ bgcolor: STATUS_CONFIG[trackedOrder.status ?? 'pending'].bg, color: STATUS_CONFIG[trackedOrder.status ?? 'pending'].color, fontWeight: 800 }}
+                  />
+                  <Typography sx={{ color: t.subColor, fontSize: "0.84rem" }}>
+                    Last update: {new Date(trackedOrder.orderTimeMs).toLocaleString()}
+                  </Typography>
+                </Stack>
+                <OrderTimeline status={trackedOrder.status ?? "pending"} />
+                <Typography sx={{ color: t.subColor, fontSize: "0.82rem", pt: 1 }}>
+                  Status updates from Admin are reflected automatically in your tracking timeline.
+                </Typography>
+              </Stack>
+            )}
+          </GlassCard>
+        </Box>
+      )}
+
+      {/* ── Tab: Account Settings ── */}
+      {tab === 3 && (
         <Box
           sx={{
             px: { xs: 2, md: 0 },

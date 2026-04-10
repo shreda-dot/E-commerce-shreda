@@ -126,8 +126,12 @@ function AppContent() {
       const guestItems = readGuestCart();
       if (!guestItems.length) return;
       try {
-        for (const item of guestItems)
-          await api.post("/api/cart-items", { productId: item.productId, quantity: item.quantity });
+        await api.post("/api/cart-items/merge", {
+          items: guestItems.map((item) => ({
+            productId: item.productId,
+            quantity: item.quantity,
+          })),
+        });
         writeGuestCart([]);
         await loadCart();
       } catch { /* keep guest cart */ }

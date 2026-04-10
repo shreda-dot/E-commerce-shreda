@@ -66,10 +66,9 @@ router.get("/", async (req, res) => {
   }
 });
 
-router.post("/", async (req, res) => {
+router.post("/", requireAuth, async (req, res) => {
   try {
-    const authUser = await getAuthUser(req);
-    const cartItems = await CartItem.findAll();
+    const cartItems = await CartItem.findAll({ where: { userId: req.user.id } });
 
     if (cartItems.length === 0) {
       return badRequest(res, "Cart is empty", "EMPTY_CART");
@@ -107,11 +106,12 @@ router.post("/", async (req, res) => {
     const order = await Order.create({
       orderTimeMs: Date.now(),
       totalCostCents,
-      userId: authUser?.id || null,
+      userId: req.user.id,
       products,
+      paymentStatus: "unpaid",
     });
 
-    await CartItem.destroy({ where: {} });
+    await CartItem.destroy({ where: { userId: req.user.id } });
     res.status(201).json(order);
   } catch (error) {
     return internalError(res, error);
@@ -138,6 +138,13 @@ router.get("/:orderId", async (req, res) => {
     let order = await Order.findByPk(orderId);
     if (!order) {
       return notFound(res, "Order not found", "ORDER_NOT_FOUND");
+    }
+
+    const authUser = await getAuthUser(req);
+    const isOwner = Boolean(authUser && order.userId === authUser.id);
+    const isAdmin = authUser?.role === "admin";
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ error: "Forbidden", code: "FORBIDDEN" });
     }
 
     if (expand === "products") {

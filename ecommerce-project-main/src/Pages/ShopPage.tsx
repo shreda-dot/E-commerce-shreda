@@ -9,6 +9,7 @@ import {
   TextField,
   Snackbar,
   Chip,
+  Paper,
   useTheme,
 } from "@mui/material";
 import {
@@ -249,9 +250,14 @@ const ProductCard = React.memo(({ product, qty, onQtyChange, onAddToCart, featur
                 fontWeight: 700,
                 textTransform: 'none',
                 background: isSoldOut ? undefined : 'linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%)',
+                transition: "transform 0.2s ease, box-shadow 0.25s ease",
+                "&:hover": {
+                  transform: isSoldOut ? "none" : "translateY(-1px)",
+                  boxShadow: isSoldOut ? "none" : "0 8px 20px rgba(37,99,235,0.35)",
+                },
               }}
             >
-              Add
+              {isSoldOut ? "Unavailable" : "Add to Cart"}
             </Button>
           </Stack>
         </Box>
@@ -306,6 +312,19 @@ export default function ShopPage({ onCartChanged, search, isAuthenticated }: Pro
   const filteredProducts = useMemo(() => 
     activeCategory === 'All' ? products : products.filter(p => deriveCategory(p.name) === activeCategory)
   , [products, activeCategory]);
+  const averagePrice = useMemo(() => {
+    if (!filteredProducts.length) return 0;
+    const total = filteredProducts.reduce((sum, p) => sum + p.priceCents, 0);
+    return total / filteredProducts.length;
+  }, [filteredProducts]);
+  const inStockCount = useMemo(
+    () => filteredProducts.filter((p) => (p.stock || 0) > 0).length,
+    [filteredProducts]
+  );
+  const topRatedCount = useMemo(
+    () => filteredProducts.filter((p) => p.rating.stars >= 4.5).length,
+    [filteredProducts]
+  );
 
   const addToCart = async (productId: string, name: string) => {
     const qty = quantities[productId] || 1;
@@ -347,7 +366,43 @@ export default function ShopPage({ onCartChanged, search, isAuthenticated }: Pro
         <Typography variant="h2" sx={{ fontWeight: 900, mb: 1, fontSize: { xs: '2.2rem', md: '3.5rem' } }}>
           {search ? `"${search}"` : 'The Collection'}
         </Typography>
+        <Typography sx={{ maxWidth: 780, color: "text.secondary", fontSize: { xs: "0.9rem", md: "1rem" } }}>
+          Discover premium picks with fast delivery, trusted ratings, and curated essentials designed for a modern shopping experience.
+        </Typography>
       </Box>
+
+      {!loading && (
+        <Box sx={{ px: { xs: 2, md: 4 }, mb: 3 }}>
+          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2,1fr)", md: "repeat(4,1fr)" }, gap: 1.25 }}>
+            {[
+              { label: "Products", value: filteredProducts.length },
+              { label: "In Stock", value: inStockCount },
+              { label: "Top Rated", value: topRatedCount },
+              { label: "Avg. Price", value: `$${(averagePrice / 100).toFixed(2)}` },
+            ].map((item) => (
+              <Paper
+                key={item.label}
+                elevation={0}
+                sx={{
+                  p: { xs: 1.4, md: 1.8 },
+                  borderRadius: 3,
+                  border: "1px solid",
+                  borderColor: "divider",
+                  bgcolor: isDark ? "rgba(255,255,255,0.03)" : "rgba(255,255,255,0.7)",
+                  backdropFilter: "blur(8px)",
+                }}
+              >
+                <Typography sx={{ fontSize: "0.7rem", color: "text.secondary", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                  {item.label}
+                </Typography>
+                <Typography sx={{ fontSize: { xs: "1rem", md: "1.3rem" }, fontWeight: 900, mt: 0.2 }}>
+                  {item.value}
+                </Typography>
+              </Paper>
+            ))}
+          </Box>
+        </Box>
+      )}
 
       {!loading && products.length > 0 && (
         <Box sx={{ 

@@ -182,7 +182,7 @@ export default function MuiCheckoutPage({ onOrderPlaced }: Props) {
       window.setTimeout(() => {
         navigate('/auth', {
           state: {
-            from: '/cart',
+            from: '/checkout',
             info: 'You must be logged in to complete your purchase',
           },
         });

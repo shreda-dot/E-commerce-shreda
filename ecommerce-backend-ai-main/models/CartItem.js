@@ -2,6 +2,14 @@ import { DataTypes } from 'sequelize';
 import { sequelize } from './index.js';
 
 export const CartItem = sequelize.define('CartItem', {
+  userId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'Users',
+      key: 'id',
+    },
+  },
   productId: {
     type: DataTypes.UUID,
     allowNull: false,
@@ -31,5 +39,11 @@ export const CartItem = sequelize.define('CartItem', {
 }, {
   defaultScope: {
     order: [['createdAt', 'ASC']]
-  }
+  },
+  indexes: [
+    {
+      unique: true,
+      fields: ['userId', 'productId'],
+    },
+  ],
 });

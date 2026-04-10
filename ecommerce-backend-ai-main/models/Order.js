@@ -62,6 +62,21 @@ export const Order = sequelize.define(
       type: DataTypes.STRING,
       allowNull: true,
     },
+    paymentStatus: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      defaultValue: "unpaid",
+      validate: {
+        isIn: {
+          args: [["unpaid", "paid", "failed"]],
+          msg: "Payment status must be one of: unpaid, paid, failed",
+        },
+      },
+      set(value) {
+        const allowed = ["unpaid", "paid", "failed"];
+        this.setDataValue("paymentStatus", allowed.includes(value) ? value : "unpaid");
+      },
+    },
     createdAt: {
       type: DataTypes.DATE(3),
     },

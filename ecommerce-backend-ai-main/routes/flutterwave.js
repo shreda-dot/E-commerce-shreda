@@ -1,7 +1,7 @@
 /**
  * Flutterwave-only payment verification.
- * POST /api/flutterwave/verify — no auth middleware (req.user not used) to avoid connection issues during integration.
- * Order: verify with Flutterwave API (axios) → math check → create Order → clear Cart.
+ * POST /api/flutterwave/verify (authenticated)
+ * Order: verify with Flutterwave API (axios) -> math check -> create user order -> clear user cart.
  */
 import express from "express";
 import axios from "axios";
@@ -10,6 +10,7 @@ import { Product } from "../models/Product.js";
 import { DeliveryOption } from "../models/DeliveryOption.js";
 import { CartItem } from "../models/CartItem.js";
 import { badRequest, internalError } from "../utils/http.js";
+import { requireAuth } from "../middleware/auth.js";
 
 const router = express.Router();
 
@@ -28,7 +29,7 @@ function parsePaidNgn(data) {
   return Number.isFinite(num) ? num : null;
 }
 
-router.post("/verify", async (req, res) => {
+router.post("/verify", requireAuth, async (req, res) => {
   console.log("[Flutterwave] Verifying ID... incoming POST /api/flutterwave/verify");
 
   try {
@@ -155,7 +156,7 @@ router.post("/verify", async (req, res) => {
     console.log("[Flutterwave] Loading cart for Math Check...");
     let cartItems;
     try {
-      cartItems = await CartItem.findAll();
+      cartItems = await CartItem.findAll({ where: { userId: req.user.id } });
     } catch (e) {
       console.error("[Flutterwave] Cart load error:", e?.message);
       return internalError(res, e);
@@ -225,10 +226,11 @@ router.post("/verify", async (req, res) => {
       order = await Order.create({
         orderTimeMs: Date.now(),
         totalCostCents,
-        userId: null,
+        userId: req.user.id,
         products,
-        status: "paid",
+        status: "processing",
         flutterwaveTransactionId: txKey,
+        paymentStatus: "paid",
       });
     } catch (e) {
       console.error("[Flutterwave] Order create failed:", e?.message);
@@ -237,7 +239,7 @@ router.post("/verify", async (req, res) => {
 
     console.log("[Flutterwave] Clearing Cart...", order.id);
     try {
-      await CartItem.destroy({ where: {} });
+      await CartItem.destroy({ where: { userId: req.user.id } });
     } catch (e) {
       console.error("[Flutterwave] Cart clear failed (order exists):", e?.message);
       return res.status(500).json({

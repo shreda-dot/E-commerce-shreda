@@ -120,6 +120,7 @@ export default function AppShell({
     { label: "Account", to: "/account", icon: <AccountIcon /> },
   ];
   const searchOpen = Boolean(searchAnchorEl);
+  const showSearchBar = location.pathname === "/";
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "background.default", display: "flex", flexDirection: "column" }}>
@@ -246,121 +247,116 @@ export default function AppShell({
         </Toolbar>
       </AppBar>
 
-      {/* ── Luxury Minimalist Search Bar ── */}
-      <Box
-        sx={{
-          position: "sticky",
-          top: isScrolled ? 8 : 76,
-          zIndex: (t) => t.zIndex.drawer + 1,
-          display: "flex",
-          justifyContent: "center",
-          width: "100%",
-          px: 2,
-          transition: "top 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
-          pointerEvents: "none",
-        }}
-      >
+      {showSearchBar && (
         <Box
           sx={{
+            position: "sticky",
+            top: isScrolled ? 8 : 76,
+            zIndex: (t) => t.zIndex.drawer + 1,
+            display: "flex",
+            justifyContent: "center",
             width: "100%",
-            /* Expand width when focused — the signature luxury effect */
-            maxWidth: searchFocused
-              ? (isScrolled ? 560 : 780)
-              : (isScrolled ? 380 : 560),
-            transition: "max-width 0.45s cubic-bezier(0.4, 0, 0.2, 1)",
-            pointerEvents: "auto",
+            px: 2,
+            transition: "top 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
+            pointerEvents: "none",
           }}
         >
-          <OutlinedInput
-            value={search}
-            inputRef={searchInputRef}
-            size={isScrolled ? "small" : "medium"}
-            onChange={(e) => handleSearchChange(e.target.value)}
-            onFocus={handleSearchFocus}
-            onBlur={handleSearchBlur}
-            placeholder={searchFocused ? "Discover something remarkable…" : "Search SHREDA…"}
-            startAdornment={
-              <InputAdornment position="start">
-                <SearchOutlinedIcon
-                  sx={{
-                    color: searchFocused ? "primary.main" : "text.disabled",
-                    transition: "color 0.2s",
-                    fontSize: isScrolled ? 18 : 20,
-                  }}
-                />
-              </InputAdornment>
-            }
+          <Box
             sx={{
               width: "100%",
-              borderRadius: "100px",
-              /* Glass background */
-              bgcolor: mode === "light"
-                ? (searchFocused ? "rgba(255,255,255,0.97)" : "rgba(255,255,255,0.62)")
-                : (searchFocused ? "rgba(14,14,28,0.97)" : "rgba(14,14,28,0.62)"),
-              backdropFilter: "blur(20px)",
-              WebkitBackdropFilter: "blur(20px)",
-              transition: "all 0.35s cubic-bezier(0.4, 0, 0.2, 1)",
-              boxShadow: searchFocused
-                ? "0 0 0 1.5px rgba(25,118,210,0.45), 0 8px 32px rgba(25,118,210,0.12)"
-                : "0 2px 10px rgba(0,0,0,0.05)",
-              /* Thin single-pixel border — the luxury detail */
-              "& fieldset": {
-                borderWidth: "1px !important",
-                borderColor: searchFocused
-                  ? "primary.main"
-                  : mode === "light" ? "rgba(0,0,0,0.07)" : "rgba(255,255,255,0.08)",
-                transition: "border-color 0.25s",
-              },
-              "&:hover fieldset": { borderColor: "primary.main" },
-              "&.Mui-focused fieldset": { borderColor: "primary.main" },
-              "& .MuiOutlinedInput-input": {
-                fontWeight: 500,
-                fontSize: isScrolled ? "0.88rem" : "0.95rem",
-                letterSpacing: "0.015em",
-                "&::placeholder": { opacity: 0.5 },
-              },
+              maxWidth: searchFocused ? (isScrolled ? 560 : 780) : (isScrolled ? 380 : 560),
+              transition: "max-width 0.45s cubic-bezier(0.4, 0, 0.2, 1)",
+              pointerEvents: "auto",
             }}
-          />
-
-          {/* Recent searches dropdown */}
-          <Popper
-            open={searchOpen}
-            anchorEl={searchAnchorEl}
-            placement="bottom"
-            sx={{ width: searchInputRef.current?.offsetWidth, zIndex: (t) => t.zIndex.drawer + 3 }}
           >
-            <ClickAwayListener onClickAway={() => setSearchAnchorEl(null)}>
-              <Paper sx={{ mt: 1, borderRadius: 3, boxShadow: "0 8px 32px rgba(0,0,0,0.12)", overflow: "hidden", bgcolor: "background.paper" }}>
-                <Box sx={{ p: 2 }}>
-                  <Typography variant="overline" sx={{ fontWeight: 800, color: "text.secondary", px: 1, fontSize: "0.65rem", letterSpacing: "0.2em" }}>
-                    Recent Searches
-                  </Typography>
-                  <List>
-                    {recentSearches.map((item) => (
-                      <ListItemButton
-                        key={item}
-                        onClick={() => { handleSearchChange(item); setSearchAnchorEl(null); }}
-                        sx={{ borderRadius: 2 }}
-                      >
-                        <ListItemIcon sx={{ minWidth: 36 }}>
-                          <SearchOutlinedIcon fontSize="small" />
-                        </ListItemIcon>
-                        <ListItemText
-                          primary={
-                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                              {item}
-                            </Typography>
-                          }
-                        />
-                      </ListItemButton>
-                    ))}
-                  </List>
-                </Box>
-              </Paper>
-            </ClickAwayListener>
-          </Popper>
+            <OutlinedInput
+              value={search}
+              inputRef={searchInputRef}
+              size={isScrolled ? "small" : "medium"}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              onFocus={handleSearchFocus}
+              onBlur={handleSearchBlur}
+              placeholder={searchFocused ? "Discover something remarkable..." : "Search SHREDA..."}
+              startAdornment={
+                <InputAdornment position="start">
+                  <SearchOutlinedIcon
+                    sx={{
+                      color: searchFocused ? "primary.main" : "text.disabled",
+                      transition: "color 0.2s",
+                      fontSize: isScrolled ? 18 : 20,
+                    }}
+                  />
+                </InputAdornment>
+              }
+              sx={{
+                width: "100%",
+                borderRadius: "100px",
+                bgcolor: mode === "light"
+                  ? (searchFocused ? "rgba(255,255,255,0.97)" : "rgba(255,255,255,0.62)")
+                  : (searchFocused ? "rgba(14,14,28,0.97)" : "rgba(14,14,28,0.62)"),
+                backdropFilter: "blur(20px)",
+                WebkitBackdropFilter: "blur(20px)",
+                transition: "all 0.35s cubic-bezier(0.4, 0, 0.2, 1)",
+                boxShadow: searchFocused
+                  ? "0 0 0 1.5px rgba(25,118,210,0.45), 0 8px 32px rgba(25,118,210,0.12)"
+                  : "0 2px 10px rgba(0,0,0,0.05)",
+                "& fieldset": {
+                  borderWidth: "1px !important",
+                  borderColor: searchFocused
+                    ? "primary.main"
+                    : mode === "light" ? "rgba(0,0,0,0.07)" : "rgba(255,255,255,0.08)",
+                  transition: "border-color 0.25s",
+                },
+                "&:hover fieldset": { borderColor: "primary.main" },
+                "&.Mui-focused fieldset": { borderColor: "primary.main" },
+                "& .MuiOutlinedInput-input": {
+                  fontWeight: 500,
+                  fontSize: isScrolled ? "0.88rem" : "0.95rem",
+                  letterSpacing: "0.015em",
+                  "&::placeholder": { opacity: 0.5 },
+                },
+              }}
+            />
+
+            <Popper
+              open={searchOpen}
+              anchorEl={searchAnchorEl}
+              placement="bottom"
+              sx={{ width: searchInputRef.current?.offsetWidth, zIndex: (t) => t.zIndex.drawer + 3 }}
+            >
+              <ClickAwayListener onClickAway={() => setSearchAnchorEl(null)}>
+                <Paper sx={{ mt: 1, borderRadius: 3, boxShadow: "0 8px 32px rgba(0,0,0,0.12)", overflow: "hidden", bgcolor: "background.paper" }}>
+                  <Box sx={{ p: 2 }}>
+                    <Typography variant="overline" sx={{ fontWeight: 800, color: "text.secondary", px: 1, fontSize: "0.65rem", letterSpacing: "0.2em" }}>
+                      Recent Searches
+                    </Typography>
+                    <List>
+                      {recentSearches.map((item) => (
+                        <ListItemButton
+                          key={item}
+                          onClick={() => { handleSearchChange(item); setSearchAnchorEl(null); }}
+                          sx={{ borderRadius: 2 }}
+                        >
+                          <ListItemIcon sx={{ minWidth: 36 }}>
+                            <SearchOutlinedIcon fontSize="small" />
+                          </ListItemIcon>
+                          <ListItemText
+                            primary={
+                              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                {item}
+                              </Typography>
+                            }
+                          />
+                        </ListItemButton>
+                      ))}
+                    </List>
+                  </Box>
+                </Paper>
+              </ClickAwayListener>
+            </Popper>
+          </Box>
         </Box>
-      </Box>
+      )}
 
       {/* ── Mobile Drawer ── */}
       <Drawer
