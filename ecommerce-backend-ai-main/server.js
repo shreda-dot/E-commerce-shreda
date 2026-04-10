@@ -15,6 +15,7 @@ import authRoutes from "./routes/auth.js";
 import adminRoutes from "./routes/admin.js";
 import healthRoutes from "./routes/health.js";
 import userRoutes from "./routes/users.js";
+import exchangeRateRoutes from "./routes/exchangeRate.js";
 import { Product } from "./models/Product.js";
 import { DeliveryOption } from "./models/DeliveryOption.js";
 import { Order } from "./models/Order.js";
@@ -73,6 +74,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/health", healthRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/exchange-rate", exchangeRateRoutes);
 
 app.use("/api/*", (req, res) => {
   return res

@@ -39,19 +39,14 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
   return fallback;
 };
 
-function readExchangeRate(): number {
-  const raw = import.meta.env.VITE_USD_NGN_EXCHANGE_RATE;
-  const n = raw !== undefined && raw !== '' ? Number(raw) : 1500;
-  return Number.isFinite(n) && n > 0 ? n : 1500;
-}
-
 export default function MuiCheckoutPage({ onOrderPlaced }: Props) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const muiTheme = useTheme();
   const isDark   = muiTheme.palette.mode === 'dark';
   const publicKey = import.meta.env.VITE_FLUTTERWAVE_PUBLIC_KEY ?? '';
-  const exchangeRate = useMemo(() => readExchangeRate(), []);
+  const [exchangeRate, setExchangeRate] = useState(1600);
+  const [rateSource, setRateSource] = useState<"loading" | "live" | "fallback">("loading");
 
   const c = isDark
     ? {
@@ -172,6 +167,21 @@ export default function MuiCheckoutPage({ onOrderPlaced }: Props) {
     }
   };
 
+  const loadExchangeRate = async () => {
+    try {
+      const response = await api.get<{ rate: number; source?: string }>("/api/exchange-rate/usd-ngn");
+      const rate = Number(response.data?.rate);
+      if (Number.isFinite(rate) && rate > 0) {
+        setExchangeRate(rate);
+      }
+      const source = String(response.data?.source || "").toLowerCase();
+      setRateSource(source.includes("fallback") ? "fallback" : "live");
+    } catch {
+      // Keep fallback rate; checkout remains functional.
+      setRateSource("fallback");
+    }
+  };
+
   useEffect(() => {
     if (!user) {
       setNotification({
@@ -190,6 +200,7 @@ export default function MuiCheckoutPage({ onOrderPlaced }: Props) {
       return;
     }
     loadSummary();
+    loadExchangeRate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -506,6 +517,9 @@ export default function MuiCheckoutPage({ onOrderPlaced }: Props) {
                       />
                       <Typography sx={{ color: c.rateText, fontSize: '0.68rem', letterSpacing: '0.05em' }}>
                         1 USD = {exchangeRate.toLocaleString()} NGN
+                      </Typography>
+                      <Typography sx={{ color: c.rateText, fontSize: '0.62rem', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                        Rate Source: {rateSource === "loading" ? "Loading..." : rateSource === "fallback" ? "Fallback" : "Parallel-adjusted live"}
                       </Typography>
                     </Box>
                   </Stack>

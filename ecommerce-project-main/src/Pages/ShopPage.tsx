@@ -93,17 +93,20 @@ interface ProductCardProps {
   qty: number;
   onQtyChange: (id: string, val: number) => void;
   onAddToCart: (id: string, name: string) => void;
+  usdToNgnRate: number | null;
   featured?: boolean;
   index: number;
 }
 
-const ProductCard = React.memo(({ product, qty, onQtyChange, onAddToCart, featured = false, index }: ProductCardProps) => {
+const ProductCard = React.memo(({ product, qty, onQtyChange, onAddToCart, usdToNgnRate, featured = false, index }: ProductCardProps) => {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const { ref, visible } = useScrollReveal();
   
   const isSoldOut = !product.stock || product.stock === 0;
   const isLowStock = product.stock < 5 && product.stock > 0;
+  const usdPrice = product.priceCents / 100;
+  const ngnPrice = usdToNgnRate ? usdPrice * usdToNgnRate : null;
 
   const isWide = featured || index % 7 === 0;
   const isTall = !isWide && index % 5 === 0;
@@ -211,9 +214,18 @@ const ProductCard = React.memo(({ product, qty, onQtyChange, onAddToCart, featur
           </Stack>
 
           <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'flex-end', mt: 1.25, mb: 1.25 }}>
-            <Typography sx={{ fontWeight: 900, fontSize: isWide ? '1.4rem' : '1.1rem', color: isDark ? '#60a5fa' : '#1d4ed8' }}>
-              ${(product.priceCents / 100).toFixed(2)}
-            </Typography>
+            <Box>
+              <Typography sx={{ fontWeight: 900, fontSize: isWide ? '1.38rem' : '1.1rem', color: isDark ? '#60a5fa' : '#1d4ed8', lineHeight: 1.1 }}>
+                {ngnPrice
+                  ? `₦${ngnPrice.toLocaleString("en-NG", { maximumFractionDigits: 0 })}`
+                  : `$${usdPrice.toFixed(2)}`}
+              </Typography>
+              {ngnPrice && (
+                <Typography sx={{ fontSize: '0.68rem', color: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.4)' }}>
+                  ${usdPrice.toFixed(2)}
+                </Typography>
+              )}
+            </Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4 }}>
               <StockIcon sx={{ fontSize: '0.7rem', color: product.stock > 10 ? '#22c55e' : product.stock > 0 ? '#f59e0b' : '#ef4444' }} />
               <Typography sx={{ fontSize: '0.68rem', fontWeight: 700, color: product.stock > 10 ? '#22c55e' : product.stock > 0 ? '#f59e0b' : '#ef4444' }}>
@@ -275,6 +287,7 @@ export default function ShopPage({ onCartChanged, search, isAuthenticated }: Pro
   const [loading, setLoading] = useState(true);
   const [quantities, setQuantities] = useState<{ [key: string]: number }>({});
   const [activeCategory, setActiveCategory] = useState<string>('All');
+  const [usdToNgnRate, setUsdToNgnRate] = useState<number | null>(null);
   const [pillStuck, setPillStuck] = useState(false);
   const [notification, setNotification] = useState<{
     open: boolean; message: string; severity: 'success' | 'error' | 'info';
@@ -304,6 +317,19 @@ export default function ShopPage({ onCartChanged, search, isAuthenticated }: Pro
   }, [search]);
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
+  useEffect(() => {
+    let mounted = true;
+    api.get<{ rate: number }>("/api/exchange-rate/usd-ngn")
+      .then((res) => {
+        if (!mounted) return;
+        const rate = Number(res.data?.rate);
+        setUsdToNgnRate(Number.isFinite(rate) && rate > 0 ? rate : null);
+      })
+      .catch(() => {
+        if (mounted) setUsdToNgnRate(null);
+      });
+    return () => { mounted = false; };
+  }, []);
 
   const categories = useMemo(() => 
     ['All', ...Array.from(new Set(products.map(p => deriveCategory(p.name))))]
@@ -460,6 +486,7 @@ export default function ShopPage({ onCartChanged, search, isAuthenticated }: Pro
                 product={product}
                 index={idx}
                 qty={quantities[product.id] || 1}
+                usdToNgnRate={usdToNgnRate}
                 onQtyChange={(id, val) => setQuantities(q => ({ ...q, [id]: val }))}
                 onAddToCart={addToCart}
               />
