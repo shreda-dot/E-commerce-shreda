@@ -41,6 +41,8 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { Link as RouterLink, useLocation, useNavigate } from "react-router-dom";
 import type { User } from "../types";
+import ShredaFooter from "./ShredaFooter";
+import ScrollToTopFab from "./ScrollToTopFab";
 
 type Props = {
   cartCount: number;
@@ -82,6 +84,10 @@ export default function AppShell({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const location       = useLocation();
   const navigate       = useNavigate();
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [location.pathname, location.search]);
 
   useEffect(() => {
     const handleScroll = () => setIsScrolled(window.scrollY > 50);
@@ -412,39 +418,8 @@ export default function AppShell({
         </Container>
       </Box>
 
-      {/* ── Footer ── */}
-      <Box
-        component="footer"
-        sx={{ py: 6, px: 2, borderTop: 1, borderColor: "divider", mt: "auto", bgcolor: "background.paper" }}
-      >
-        <Container maxWidth="lg">
-          <Stack
-            direction={{ xs: "column", sm: "row" }}
-            spacing={3}
-            sx={{ justifyContent: "space-between", alignItems: "center" }}
-          >
-            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 700 }}>
-              © 2026 Shreda Store
-            </Typography>
-            <Stack direction="row" spacing={4}>
-              {[
-                { label: "Privacy", to: "/privacy" },
-                { label: "Terms",   to: "/terms"   },
-                { label: "Contact", to: "/contact" },
-              ].map(({ label, to }) => (
-                <Typography
-                  key={to}
-                  component={RouterLink} to={to}
-                  variant="body2"
-                  sx={{ textDecoration: "none", color: "text.secondary", fontWeight: 600, "&:hover": { color: "primary.main" } }}
-                >
-                  {label}
-                </Typography>
-              ))}
-            </Stack>
-          </Stack>
-        </Container>
-      </Box>
+      <ShredaFooter />
+      <ScrollToTopFab />
 
     </Box>
   );

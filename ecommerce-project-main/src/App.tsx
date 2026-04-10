@@ -10,7 +10,9 @@ import AdminPage from "./Pages/AdminPage";
 import AuthPage from "./Pages/AuthPage";
 import CartPage from "./Pages/CartPage";
 import MuiCheckoutPage from "./Pages/MuiCheckoutPage";
+import PrivacyPage from "./Pages/PrivacyPage";
 import ShopPage from "./Pages/ShopPage";
+import TermsPage from "./Pages/TermsPage";
 import RealisticLoader from "./components/RealisticLoader";
 import { buildTheme } from "./theme";
 import type { CartItem } from "./types";
@@ -196,6 +198,8 @@ function AppContent() {
           <Route path="/account" element={<AccountPage />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/auth" element={<AuthPage />} />
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AppShell>
