@@ -51,11 +51,15 @@ const writeGuestCart = (items: CartItem[]) => {
 };
 
 // ─── Scroll-reveal hook ───────────────────────────────────────────────────────
-function useScrollReveal(threshold = 0.12) {
+function useScrollReveal(threshold = 0.12, enabled = true) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const [visible, setVisible] = useState(false);
+  const [visible, setVisible] = useState(!enabled);
 
   useEffect(() => {
+    if (!enabled) {
+      setVisible(true);
+      return;
+    }
     const el = ref.current;
     if (!el) return;
     const observer = new IntersectionObserver(
@@ -69,7 +73,7 @@ function useScrollReveal(threshold = 0.12) {
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, [threshold]);
+  }, [threshold, enabled]);
 
   return { ref, visible };
 }
@@ -96,12 +100,13 @@ interface ProductCardProps {
   usdToNgnRate: number | null;
   featured?: boolean;
   index: number;
+  playEntryAnimation?: boolean;
 }
 
-const ProductCard = React.memo(({ product, qty, onQtyChange, onAddToCart, usdToNgnRate, featured = false, index }: ProductCardProps) => {
+const ProductCard = React.memo(({ product, qty, onQtyChange, onAddToCart, usdToNgnRate, featured = false, index, playEntryAnimation = true }: ProductCardProps) => {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
-  const { ref, visible } = useScrollReveal();
+  const { ref, visible } = useScrollReveal(0.12, playEntryAnimation);
   
   const isSoldOut = !product.stock || product.stock === 0;
   const isLowStock = product.stock < 5 && product.stock > 0;
@@ -289,9 +294,21 @@ export default function ShopPage({ onCartChanged, search, isAuthenticated }: Pro
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const [usdToNgnRate, setUsdToNgnRate] = useState<number | null>(null);
   const [pillStuck, setPillStuck] = useState(false);
+  const [playEntryAnimation, setPlayEntryAnimation] = useState(false);
   const [notification, setNotification] = useState<{
     open: boolean; message: string; severity: 'success' | 'error' | 'info';
   }>({ open: false, message: "", severity: "info" });
+
+  useEffect(() => {
+    const key = "shreda_shop_entry_animation_seen";
+    const seen = sessionStorage.getItem(key) === "1";
+    if (seen) {
+      setPlayEntryAnimation(false);
+      return;
+    }
+    setPlayEntryAnimation(true);
+    sessionStorage.setItem(key, "1");
+  }, []);
 
   useEffect(() => {
     const onScroll = () => {
@@ -487,6 +504,7 @@ export default function ShopPage({ onCartChanged, search, isAuthenticated }: Pro
                 index={idx}
                 qty={quantities[product.id] || 1}
                 usdToNgnRate={usdToNgnRate}
+                playEntryAnimation={playEntryAnimation}
                 onQtyChange={(id, val) => setQuantities(q => ({ ...q, [id]: val }))}
                 onAddToCart={addToCart}
               />

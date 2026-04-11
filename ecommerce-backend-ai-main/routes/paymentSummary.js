@@ -2,6 +2,7 @@ import express from 'express';
 import { CartItem } from '../models/CartItem.js';
 import { Product } from '../models/Product.js';
 import { DeliveryOption } from '../models/DeliveryOption.js';
+import { OrderDraft } from '../models/OrderDraft.js';
 import { internalError } from '../utils/http.js';
 import { requireAuth } from '../middleware/auth.js';
 
@@ -10,6 +11,22 @@ router.use(requireAuth);
 
 router.get('/', async (req, res) => {
   try {
+    const draftOrderId = typeof req.query?.draftOrderId === 'string' ? req.query.draftOrderId : '';
+    if (draftOrderId) {
+      const draft = await OrderDraft.findByPk(draftOrderId);
+      if (draft && draft.userId === req.user.id && Date.now() <= Number(draft.expiresAt)) {
+        const totals = draft.payload?.totals || {};
+        return res.json({
+          totalItems: Number(totals.totalItems || 0),
+          productCostCents: Number(totals.productCostCents || 0),
+          shippingCostCents: Number(totals.shippingCostCents || 0),
+          totalCostBeforeTaxCents: Number(totals.totalCostBeforeTaxCents || 0),
+          taxCents: Number(totals.taxCents || 0),
+          totalCostCents: Number(totals.totalCostCents || 0),
+        });
+      }
+    }
+
     const cartItems = await CartItem.findAll({ where: { userId: req.user.id } });
     let totalItems = 0;
     let productCostCents = 0;

@@ -5,6 +5,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { api } from "./api";
 import AppShell from "./components/AppShell";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { DeliveryProvider } from "./contexts/DeliveryContext";
 import AccountPage from "./Pages/AccountPage";
 import AdminPage from "./Pages/AdminPage";
 import AuthPage from "./Pages/AuthPage";
@@ -228,7 +229,9 @@ export default function App() {
   const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
   const content = (
     <AuthProvider>
-      <AppContent />
+      <DeliveryProvider>
+        <AppContent />
+      </DeliveryProvider>
     </AuthProvider>
   );
   return googleClientId

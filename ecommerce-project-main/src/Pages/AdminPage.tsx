@@ -50,12 +50,15 @@ import {
   ShoppingBasket as OrderIcon,
   Save as SaveIcon,
   AttachMoney as RevenueIcon,
+  LocalShipping as LogisticsIcon,
+  Visibility as ViewIcon,
+  SettingsSuggest as ShippingSettingsIcon,
 } from "@mui/icons-material";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { Navigate } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../contexts/AuthContext";
-import type { Order, Product, User, UserRole, UserStatus } from "../types";
+import type { Order, Product, ShippingConfig, User, UserRole, UserStatus } from "../types";
 import RealisticLoader from "../components/RealisticLoader";
 
 interface DashboardStats {
@@ -78,7 +81,7 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
 export default function AdminPage() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<
-    "dashboard" | "users" | "products" | "orders"
+    "dashboard" | "users" | "products" | "orders" | "shipping"
   >("dashboard");
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState<{
@@ -93,6 +96,7 @@ export default function AdminPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [shippingConfigs, setShippingConfigs] = useState<ShippingConfig[]>([]);
 
   // Form states
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -114,6 +118,7 @@ export default function AdminPage() {
     message: string;
     onConfirm: null | (() => Promise<void>);
   }>({ open: false, title: "", message: "", onConfirm: null });
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -124,15 +129,17 @@ export default function AdminPage() {
         api.get<{ users: User[] }>("/api/auth/admin/users"),
         api.get<Product[]>("/api/products"),
         api.get<Order[]>("/api/orders?expand=products"),
+        api.get<ShippingConfig[]>("/api/admin/shipping-configs"),
       ]);
 
-      const [statsRes, usersRes, productsRes, ordersRes] = responses;
+      const [statsRes, usersRes, productsRes, ordersRes, shippingRes] = responses;
 
       if (statsRes.status === "fulfilled") setStats(statsRes.value.data.stats);
       if (usersRes.status === "fulfilled") setUsers(usersRes.value.data.users);
       if (productsRes.status === "fulfilled")
         setProducts(productsRes.value.data);
       if (ordersRes.status === "fulfilled") setOrders(ordersRes.value.data);
+      if (shippingRes.status === "fulfilled") setShippingConfigs(shippingRes.value.data);
 
       const failures = responses.filter((r) => r.status === "rejected");
       if (failures.length > 0) {
@@ -330,7 +337,7 @@ export default function AdminPage() {
               setIsUserDialogOpen(true);
             }
           }}
-          disabled={activeTab === "dashboard" || activeTab === "orders"}
+          disabled={activeTab === "dashboard" || activeTab === "orders" || activeTab === "shipping"}
         >
           Add New{" "}
           {activeTab === "products"
@@ -352,6 +359,7 @@ export default function AdminPage() {
           <Tab icon={<DashboardIcon />} label="Dashboard" value="dashboard" />
           <Tab icon={<InventoryIcon />} label="Products" value="products" />
           <Tab icon={<OrderIcon />} label="Orders" value="orders" />
+          <Tab icon={<ShippingSettingsIcon />} label="Shipping" value="shipping" />
           <Tab icon={<PeopleIcon />} label="Users" value="users" />
         </Tabs>
       </Paper>
@@ -364,6 +372,7 @@ export default function AdminPage() {
               value: `$${(stats.totalRevenueCents / 100).toLocaleString()}`,
               icon: <RevenueIcon fontSize="large" />,
               color: "#10b981",
+
             },
             {
               label: "Total Orders",
@@ -618,8 +627,18 @@ export default function AdminPage() {
                   </TableCell>
                   <TableCell sx={{ fontWeight: 700 }}>
                     ${(order.totalCostCents / 100).toFixed(2)}
+                    {Number(order.shippingMethodFeeCents || 0) > 0 && (
+                      <Typography sx={{ fontSize: "0.7rem", color: "text.secondary" }}>
+                        + Shipping Method ${(Number(order.shippingMethodFeeCents || 0) / 100).toFixed(2)}
+                      </Typography>
+                    )}
                   </TableCell>
                   <TableCell align="right">
+                    <Tooltip title="View Logistics">
+                      <IconButton color="primary" onClick={() => setSelectedOrder(order)}>
+                        <ViewIcon />
+                      </IconButton>
+                    </Tooltip>
                     <Tooltip title="Delete Order">
                       <IconButton
                         color="error"
@@ -715,6 +734,83 @@ export default function AdminPage() {
                         </Tooltip>
                       </Stack>
                     )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+
+      {activeTab === "shipping" && (
+        <TableContainer component={Paper} sx={{ borderRadius: 4, boxShadow: 3 }}>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>Zone</TableCell>
+                <TableCell>Method</TableCell>
+                <TableCell>USD Fee</TableCell>
+                <TableCell>NGN Fee</TableCell>
+                <TableCell align="right">Action</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {shippingConfigs.map((cfg) => (
+                <TableRow key={cfg.id} hover>
+                  <TableCell sx={{ fontWeight: 700 }}>{cfg.zoneKey}</TableCell>
+                  <TableCell sx={{ textTransform: "capitalize" }}>{cfg.method}</TableCell>
+                  <TableCell>
+                    <TextField
+                      size="small"
+                      type="number"
+                      value={(cfg.usdFeeCents / 100).toFixed(2)}
+                      onChange={(e) => {
+                        const next = Number(e.target.value);
+                        setShippingConfigs((prev) =>
+                          prev.map((p) =>
+                            p.id === cfg.id
+                              ? { ...p, usdFeeCents: Number.isFinite(next) ? Math.max(0, Math.round(next * 100)) : p.usdFeeCents }
+                              : p,
+                          ),
+                        );
+                      }}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <TextField
+                      size="small"
+                      type="number"
+                      value={cfg.ngnFee}
+                      onChange={(e) => {
+                        const next = Number(e.target.value);
+                        setShippingConfigs((prev) =>
+                          prev.map((p) =>
+                            p.id === cfg.id
+                              ? { ...p, ngnFee: Number.isFinite(next) ? Math.max(0, Math.round(next)) : p.ngnFee }
+                              : p,
+                          ),
+                        );
+                      }}
+                    />
+                  </TableCell>
+                  <TableCell align="right">
+                    <Button
+                      variant="contained"
+                      size="small"
+                      onClick={async () => {
+                        try {
+                          await api.put(`/api/admin/shipping-configs/${cfg.id}`, {
+                            usdFeeCents: cfg.usdFeeCents,
+                            ngnFee: cfg.ngnFee,
+                          });
+                          handleMessage("Shipping fee updated.");
+                        } catch {
+                          handleMessage("Unable to save shipping config.", "error");
+                        }
+                      }}
+                    >
+                      Save
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}
@@ -880,6 +976,114 @@ export default function AdminPage() {
             </Button>
           </DialogActions>
         </form>
+      </Dialog>
+      <Dialog
+        open={Boolean(selectedOrder)}
+        onClose={() => setSelectedOrder(null)}
+        fullWidth
+        maxWidth="md"
+        slotProps={{ paper: { sx: { borderRadius: 3 } } }}
+      >
+        {selectedOrder && (
+          <>
+            <DialogTitle sx={{ fontWeight: 800 }}>
+              Order #{selectedOrder.id.slice(0, 8)} - Logistics & Fulfillment
+            </DialogTitle>
+            <DialogContent>
+              <Card
+                sx={{
+                  borderRadius: 3,
+                  border: "1px solid",
+                  borderColor: "divider",
+                  background: (theme) =>
+                    theme.palette.mode === "dark"
+                      ? "rgba(255,255,255,0.04)"
+                      : "rgba(255,255,255,0.82)",
+                  backdropFilter: "blur(12px)",
+                }}
+              >
+                <CardContent>
+                  <Stack spacing={2.5}>
+                    <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
+                      <Box
+                        sx={{
+                          width: 36,
+                          height: 36,
+                          borderRadius: 2,
+                          bgcolor: "primary.main",
+                          color: "#fff",
+                          display: "grid",
+                          placeItems: "center",
+                        }}
+                      >
+                        <LogisticsIcon fontSize="small" />
+                      </Box>
+                      <Box>
+                        <Typography sx={{ fontWeight: 800 }}>Logistics & Fulfillment</Typography>
+                        <Typography sx={{ fontSize: "0.8rem", color: "text.secondary" }}>
+                          Shipping label preview for dispatch accuracy.
+                        </Typography>
+                      </Box>
+                    </Stack>
+                    <Divider />
+                    <Grid container spacing={2}>
+                      <Grid size={{ xs: 12, md: 6 }}>
+                        <Paper variant="outlined" sx={{ p: 2, borderRadius: 2.5 }}>
+                          <Typography sx={{ fontWeight: 700, mb: 1 }}>Shipping Label</Typography>
+                          <Typography sx={{ fontSize: "0.8rem", color: "text.secondary" }}>Zone</Typography>
+                          <Typography sx={{ fontWeight: 700, mb: 1 }}>
+                            {selectedOrder.deliveryZone || "Not provided"}
+                          </Typography>
+                          <Typography sx={{ fontSize: "0.8rem", color: "text.secondary" }}>Specific Location</Typography>
+                          <Typography sx={{ fontWeight: 700, mb: 1 }}>
+                            {selectedOrder.deliveryAddress || "Not provided"}
+                          </Typography>
+                          <Typography sx={{ fontSize: "0.8rem", color: "text.secondary" }}>Shipping Speed</Typography>
+                          <Chip
+                            label={
+                              (selectedOrder.shippingMethod || "standard") === "express"
+                                ? "Express"
+                                : "Standard"
+                            }
+                            color={
+                              (selectedOrder.shippingMethod || "standard") === "express"
+                                ? "warning"
+                                : "primary"
+                            }
+                            size="small"
+                            sx={{ fontWeight: 800, mt: 0.5 }}
+                          />
+                        </Paper>
+                      </Grid>
+                      <Grid size={{ xs: 12, md: 6 }}>
+                        <Paper variant="outlined" sx={{ p: 2, borderRadius: 2.5 }}>
+                          <Typography sx={{ fontWeight: 700, mb: 1 }}>Cost Breakdown</Typography>
+                          <Stack spacing={0.75}>
+                            <Box sx={{ display: "flex", justifyContent: "space-between" }}>
+                              <Typography color="text.secondary">Order Total</Typography>
+                              <Typography sx={{ fontWeight: 700 }}>
+                                ${(selectedOrder.totalCostCents / 100).toFixed(2)}
+                              </Typography>
+                            </Box>
+                            <Box sx={{ display: "flex", justifyContent: "space-between" }}>
+                              <Typography color="text.secondary">Shipping Method Fee</Typography>
+                              <Typography sx={{ fontWeight: 700 }}>
+                                ${(Number(selectedOrder.shippingMethodFeeCents || 0) / 100).toFixed(2)}
+                              </Typography>
+                            </Box>
+                          </Stack>
+                        </Paper>
+                      </Grid>
+                    </Grid>
+                  </Stack>
+                </CardContent>
+              </Card>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setSelectedOrder(null)}>Close</Button>
+            </DialogActions>
+          </>
+        )}
       </Dialog>
       <Dialog
         open={deleteDialogOpen}

@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import { DataTypes } from "sequelize";
 import path from "path";
 import { fileURLToPath } from "url";
 import { sequelize } from "./models/index.js";
@@ -16,6 +17,7 @@ import adminRoutes from "./routes/admin.js";
 import healthRoutes from "./routes/health.js";
 import userRoutes from "./routes/users.js";
 import exchangeRateRoutes from "./routes/exchangeRate.js";
+import shippingConfigRoutes from "./routes/shippingConfig.js";
 import { Product } from "./models/Product.js";
 import { DeliveryOption } from "./models/DeliveryOption.js";
 import { Order } from "./models/Order.js";
@@ -24,12 +26,117 @@ import { defaultDeliveryOptions } from "./defaultData/defaultDeliveryOptions.js"
 import { defaultOrders } from "./defaultData/defaultOrders.js";
 import fs from "fs";
 import { User } from "./models/User.js";
+import { ShippingConfig } from "./models/ShippingConfig.js";
 import { hashPassword, isValidPasswordPolicy } from "./utils/auth.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+async function normalizeCartItemIndexes() {
+  const queryInterface = sequelize.getQueryInterface();
+
+  // Ensure per-user uniqueness for cart items in all environments.
+  try {
+    await queryInterface.addIndex("CartItems", ["userId", "productId"], {
+      unique: true,
+      name: "cart_items_user_product_unique",
+    });
+  } catch {
+    // Index may already exist (safe to ignore).
+  }
+
+  if (sequelize.getDialect() !== "sqlite") return;
+
+  // Clean up legacy sqlite unique indexes on productId only.
+  const [indexes] = await sequelize.query("PRAGMA index_list('CartItems');");
+  if (!Array.isArray(indexes)) return;
+  let needsTableRebuild = false;
+
+  for (const rawIndex of indexes) {
+    const index = rawIndex;
+    const indexName = String(index?.name ?? "");
+    const isUnique = Number(index?.unique ?? 0) === 1;
+    if (!indexName || !isUnique || indexName === "cart_items_user_product_unique") {
+      continue;
+    }
+
+    const [columns] = await sequelize.query(`PRAGMA index_info('${indexName}');`);
+    if (!Array.isArray(columns)) continue;
+    const colNames = columns
+      .map((row) => String(row?.name ?? ""))
+      .filter(Boolean);
+
+    const isLegacyProductOnlyUnique =
+      colNames.length === 1 && colNames[0] === "productId";
+
+    const isSQLiteAutoIndex = indexName.startsWith("sqlite_autoindex_");
+    if (isLegacyProductOnlyUnique && isSQLiteAutoIndex) {
+      // Auto indexes represent table-level UNIQUE constraints.
+      // They cannot be dropped directly and require table rebuild.
+      needsTableRebuild = true;
+      continue;
+    }
+
+    if (isLegacyProductOnlyUnique && !isSQLiteAutoIndex) {
+      try {
+        await sequelize.query(`DROP INDEX IF EXISTS "${indexName}";`);
+      } catch {
+        // Ignore non-droppable or already-removed indexes.
+      }
+    }
+  }
+
+  if (!needsTableRebuild) return;
+
+  // sql.js can run out of memory during copy-based rebuilds.
+  // We perform a deterministic reset of CartItems only, then recreate
+  // with the correct unique constraint.
+  await sequelize.query("PRAGMA foreign_keys = OFF;");
+  try {
+    await queryInterface.dropTable("CartItems");
+    await queryInterface.createTable("CartItems", {
+      id: {
+        type: DataTypes.INTEGER,
+        primaryKey: true,
+        autoIncrement: true,
+        allowNull: false,
+      },
+      userId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: "Users", key: "id" },
+      },
+      productId: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: { model: "Products", key: "id" },
+      },
+      quantity: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+      },
+      deliveryOptionId: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        references: { model: "DeliveryOptions", key: "id" },
+      },
+      createdAt: { type: DataTypes.DATE(3) },
+      updatedAt: { type: DataTypes.DATE(3) },
+    });
+    await queryInterface.addIndex("CartItems", ["userId", "productId"], {
+      unique: true,
+      name: "cart_items_user_product_unique",
+    });
+  } finally {
+    try {
+      await sequelize.query("PRAGMA foreign_keys = ON;");
+    } catch {
+      // Avoid crashing app startup if pragma toggle fails.
+    }
+  }
+}
 
 // CORS configuration.
 //
@@ -75,6 +182,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/health", healthRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/exchange-rate", exchangeRateRoutes);
+app.use("/api/shipping-config", shippingConfigRoutes);
 
 app.use("/api/*", (req, res) => {
   return res
@@ -118,6 +226,26 @@ if (sequelize.getDialect() === 'sqlite') {
 await sequelize.sync({ alter: true });
 if (sequelize.getDialect() === 'sqlite') {
   await sequelize.query('PRAGMA foreign_keys = ON;');
+}
+await normalizeCartItemIndexes();
+
+const defaultShippingConfigs = [
+  { zoneKey: "lagos-mainland", method: "standard", usdFeeCents: 2300, ngnFee: 36800 },
+  { zoneKey: "lagos-mainland", method: "express", usdFeeCents: 2500, ngnFee: 40000 },
+  { zoneKey: "lagos-island", method: "standard", usdFeeCents: 2300, ngnFee: 36800 },
+  { zoneKey: "lagos-island", method: "express", usdFeeCents: 2500, ngnFee: 40000 },
+  { zoneKey: "rest-of-nigeria", method: "standard", usdFeeCents: 3000, ngnFee: 48000 },
+  { zoneKey: "rest-of-nigeria", method: "express", usdFeeCents: 4500, ngnFee: 72000 },
+  { zoneKey: "international", method: "standard", usdFeeCents: 7000, ngnFee: 112000 },
+  { zoneKey: "international", method: "express", usdFeeCents: 10000, ngnFee: 160000 },
+];
+for (const cfg of defaultShippingConfigs) {
+  const existing = await ShippingConfig.findOne({
+    where: { zoneKey: cfg.zoneKey, method: cfg.method },
+  });
+  if (!existing) {
+    await ShippingConfig.create(cfg);
+  }
 }
 
 const productCount = await Product.count();

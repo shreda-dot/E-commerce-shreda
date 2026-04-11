@@ -17,10 +17,11 @@ import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined';
 import VerifiedUserOutlinedIcon from '@mui/icons-material/VerifiedUserOutlined';
 import { useFlutterwave } from 'flutterwave-react-v3';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../contexts/AuthContext';
-import type { PaymentSummary } from '../types';
+import { DELIVERY_ZONES, useDelivery } from '../contexts/DeliveryContext';
+import type { CheckoutLocationState, PaymentSummary } from '../types';
 
 type Props = {
   onOrderPlaced: () => Promise<void>;
@@ -29,6 +30,7 @@ type Props = {
 const moneyUsd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 const moneyNgn = (amount: number) =>
   `₦${amount.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const CHECKOUT_STATE_KEY = "shreda_checkout_state_v1";
 
 type ApiError = { response?: { data?: { error?: string } } };
 const getErrorMessage = (error: unknown, fallback: string): string => {
@@ -41,6 +43,8 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
 
 export default function MuiCheckoutPage({ onOrderPlaced }: Props) {
   const { user } = useAuth();
+  const { details, isValid: isDeliveryValid } = useDelivery();
+  const location = useLocation();
   const navigate = useNavigate();
   const muiTheme = useTheme();
   const isDark   = muiTheme.palette.mode === 'dark';
@@ -137,6 +141,7 @@ export default function MuiCheckoutPage({ onOrderPlaced }: Props) {
       };
 
   const [summary, setSummary] = useState<PaymentSummary | null>(null);
+  const [checkoutState, setCheckoutState] = useState<CheckoutLocationState | null>(null);
   const [validating, setValidating] = useState(false);
   const [payNonce, setPayNonce] = useState(0);
   const [pendingModalOpen, setPendingModalOpen] = useState(false);
@@ -154,9 +159,11 @@ export default function MuiCheckoutPage({ onOrderPlaced }: Props) {
   const closeNotification = () =>
     setNotification((prev) => ({ ...prev, open: false }));
 
-  const loadSummary = async () => {
+  const loadSummary = async (draftOrderId?: string) => {
     try {
-      const response = await api.get<PaymentSummary>('/api/payment-summary');
+      const response = await api.get<PaymentSummary>('/api/payment-summary', {
+        params: draftOrderId ? { draftOrderId } : undefined,
+      });
       setSummary(response.data);
     } catch {
       setNotification({
@@ -164,6 +171,22 @@ export default function MuiCheckoutPage({ onOrderPlaced }: Props) {
         message: 'Unable to load checkout summary.',
         severity: 'error',
       });
+    }
+  };
+
+  const loadDraft = async (draftOrderId: string) => {
+    try {
+      const res = await api.get<{
+        draftOrderId: string;
+        totalCostCents: number;
+        payload?: {
+          items?: Array<{ productId: string; quantity: number }>;
+          delivery?: unknown;
+        };
+      }>(`/api/orders/pre-check/${draftOrderId}`);
+      return res.data;
+    } catch {
+      return null;
     }
   };
 
@@ -199,15 +222,51 @@ export default function MuiCheckoutPage({ onOrderPlaced }: Props) {
       }, 250);
       return;
     }
-    loadSummary();
+    if (!isDeliveryValid || !details) {
+      setNotification({
+        open: true,
+        message: 'Select and save a delivery location before payment.',
+        severity: 'info',
+      });
+      window.setTimeout(() => {
+        navigate('/cart');
+      }, 250);
+      return;
+    }
+    const locationState = (location.state ?? null) as CheckoutLocationState | null;
+    const raw = localStorage.getItem(CHECKOUT_STATE_KEY);
+    let storedState: CheckoutLocationState | null = null;
+    if (raw) {
+      try {
+        storedState = JSON.parse(raw) as CheckoutLocationState;
+      } catch {
+        storedState = null;
+      }
+    }
+    const resolved = locationState ?? storedState;
+    if (resolved) setCheckoutState(resolved);
+
+    void (async () => {
+      if (resolved?.draftOrderId) {
+        const draft = await loadDraft(resolved.draftOrderId);
+        if (!draft) {
+          setNotification({
+            open: true,
+            message: "Checkout draft expired. Please review cart again.",
+            severity: "info",
+          });
+          navigate("/cart");
+          return;
+        }
+      }
+      await loadSummary(resolved?.draftOrderId);
+    })();
     loadExchangeRate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [user, isDeliveryValid, details, navigate, location.state]);
 
-  const usdTotal = summary ? summary.totalCostCents / 100 : 0;
-  const amountNgn = summary
-    ? Math.round(usdTotal * exchangeRate * 100) / 100
-    : 0;
+  const usdTotal = (checkoutState?.totalCostCents ?? summary?.totalCostCents ?? 0) / 100;
+  const amountNgn = Math.round(usdTotal * exchangeRate * 100) / 100;
 
   const fwConfig = useMemo(() => {
     const email = user?.email?.trim() || 'customer@example.com';
@@ -266,7 +325,10 @@ export default function MuiCheckoutPage({ onOrderPlaced }: Props) {
         success?: boolean;
         order?: unknown;
         message?: string;
-      }>('/api/flutterwave/verify', { transaction_id: transactionId });
+      }>('/api/flutterwave/verify', {
+        transaction_id: transactionId,
+        draftOrderId: checkoutState?.draftOrderId ?? undefined,
+      });
 
       const ok =
         verifyRes.status >= 200 &&
@@ -285,6 +347,7 @@ export default function MuiCheckoutPage({ onOrderPlaced }: Props) {
       // ✅ STEP 1: Clear cart state + localStorage BEFORE navigation.
       // onOrderPlaced() → App.tsx handleOrderPlaced() → setCartItems([]) + writeGuestCart([])
       await onOrderPlaced();
+      localStorage.removeItem(CHECKOUT_STATE_KEY);
 
       // ✅ STEP 2: Show success notification
       setNotification({
@@ -328,7 +391,8 @@ export default function MuiCheckoutPage({ onOrderPlaced }: Props) {
   }, [pendingModalOpen, handleFlutterPayment]);
 
   const startPayment = () => {
-    if (!publicKey || !summary || summary.totalItems === 0 || amountNgn <= 0) return;
+    const hasItems = (summary?.totalItems ?? checkoutState?.items?.length ?? 0) > 0;
+    if (!publicKey || !hasItems || amountNgn <= 0) return;
     setPayNonce((n) => n + 1);
     setPendingModalOpen(true);
   };
@@ -336,8 +400,10 @@ export default function MuiCheckoutPage({ onOrderPlaced }: Props) {
   const isLoading = validating;
   const canPay =
     Boolean(publicKey) &&
-    Boolean(summary) &&
-    (summary?.totalItems ?? 0) > 0 &&
+    (Boolean(summary) || Boolean(checkoutState)) &&
+    (summary?.totalItems ?? checkoutState?.items?.length ?? 0) > 0 &&
+    Boolean(details) &&
+    isDeliveryValid &&
     amountNgn > 0;
 
   return (
@@ -397,8 +463,19 @@ export default function MuiCheckoutPage({ onOrderPlaced }: Props) {
                 </Typography>
                 <Stack spacing={2.5}>
                   {[
-                    { icon: <LocalShippingOutlinedIcon sx={{ fontSize: 16, color: c.accentLine }} />, sub: 'Shipping Method', main: 'Standard International', detail: 'Estimated: 3 – 5 Business Days' },
+                    {
+                      icon: <LocalShippingOutlinedIcon sx={{ fontSize: 16, color: c.accentLine }} />,
+                      sub: 'Shipping Method',
+                      main: details?.speed === 'express' ? 'Express Delivery' : 'Standard Delivery',
+                      detail: (() => {
+                        const zone = details
+                          ? DELIVERY_ZONES.find((z) => z.id === details.zoneId)
+                          : null;
+                        return zone ? `${zone.name} • ETA ${zone.eta}` : 'Estimated: 3 - 5 Business Days';
+                      })(),
+                    },
                     { icon: <CheckCircleOutlineIcon sx={{ fontSize: 16, color: c.accentLine }} />, sub: 'Account', main: user?.name ?? 'Customer', detail: user?.email ?? '—' },
+                    { icon: <CheckCircleOutlineIcon sx={{ fontSize: 16, color: c.accentLine }} />, sub: 'Delivery Phone', main: details?.phoneNumber ?? '—', detail: details?.address ?? '—' },
                   ].map(({ icon, sub, main, detail }) => (
                     <Box key={sub} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
                       <Box sx={{ mt: 0.3, width: 32, height: 32, borderRadius: 1.5, border: `1px solid ${c.badgeBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -448,6 +525,16 @@ export default function MuiCheckoutPage({ onOrderPlaced }: Props) {
                         <Typography sx={{ color: c.valueSecond, fontSize: '0.82rem', fontWeight: 500 }}>{value}</Typography>
                       </Box>
                     ))}
+                    {checkoutState && (
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Typography sx={{ color: c.label, fontSize: '0.82rem' }}>
+                          {checkoutState.deliveryZoneLabel} Fee
+                        </Typography>
+                        <Typography sx={{ color: c.valueSecond, fontSize: '0.82rem', fontWeight: 500 }}>
+                          {moneyUsd(checkoutState.deliveryFeeCents)}
+                        </Typography>
+                      </Box>
+                    )}
                   </Stack>
                 </Box>
               )}
@@ -480,13 +567,26 @@ export default function MuiCheckoutPage({ onOrderPlaced }: Props) {
                       <Typography sx={{ color: c.tableHead, fontSize: '0.7rem', letterSpacing: '0.2em' }}>AMOUNT</Typography>
                     </Box>
                     {[
-                      { label: `Items (×${summary.totalItems})`, value: moneyUsd(summary.productCostCents) },
-                      { label: 'Shipping & Handling', value: moneyUsd(summary.shippingCostCents) },
-                      { label: 'Tax', value: moneyUsd(summary.taxCents) },
+                      { label: `Items (×${summary.totalItems})`, value: moneyUsd(checkoutState?.subtotalCents ?? summary.productCostCents) },
+                      {
+                        label: checkoutState?.shippingLabel || `Shipping (${checkoutState?.deliveryZoneLabel?.replace(" • ", " - ") || "Standard"})`,
+                        value: moneyUsd((checkoutState?.deliveryFeeCents ?? 0) + summary.shippingCostCents),
+                      },
+                      { label: 'Tax', value: moneyUsd(checkoutState?.taxCents ?? summary.taxCents) },
                     ].map(({ label, value }) => (
                       <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <Typography sx={{ color: c.tableRow, fontSize: '0.88rem' }}>{label}</Typography>
                         <Typography sx={{ color: c.tableVal, fontSize: '0.88rem', fontWeight: 500 }}>{value}</Typography>
+                      </Box>
+                    ))}
+                    {checkoutState?.items?.slice(0, 4).map((item) => (
+                      <Box key={item.productId} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Typography sx={{ color: c.tableRow, fontSize: '0.78rem' }}>
+                          {item.name} x{item.quantity}
+                        </Typography>
+                        <Typography sx={{ color: c.tableVal, fontSize: '0.78rem', fontWeight: 500 }}>
+                          {moneyUsd(item.lineTotalCents)}
+                        </Typography>
                       </Box>
                     ))}
                   </Stack>
@@ -507,7 +607,7 @@ export default function MuiCheckoutPage({ onOrderPlaced }: Props) {
                     <Box>
                       <Typography sx={{ fontSize: '0.6rem', letterSpacing: '0.3em', color: c.totalLabel, mb: 0.5 }}>TOTAL DUE</Typography>
                       <Typography sx={{ fontSize: { xs: '2.8rem', md: '3.5rem' }, fontWeight: 900, color: c.totalAmt, letterSpacing: '-0.03em', lineHeight: 1 }}>
-                        {moneyUsd(summary.totalCostCents)}
+                        {moneyUsd(checkoutState?.totalCostCents ?? summary.totalCostCents)}
                       </Typography>
                     </Box>
                     <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: { xs: 'flex-start', sm: 'flex-end' }, gap: 0.75 }}>

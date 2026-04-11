@@ -53,12 +53,28 @@ router.post('/', async (req, res) => {
       cartItem.quantity = Math.min(cartItem.quantity + normalizedQuantity, 10);
       await cartItem.save();
     } else {
-      cartItem = await CartItem.create({
-        userId: req.user.id,
-        productId,
-        quantity: normalizedQuantity,
-        deliveryOptionId: '1',
-      });
+      try {
+        cartItem = await CartItem.create({
+          userId: req.user.id,
+          productId,
+          quantity: normalizedQuantity,
+          deliveryOptionId: '1',
+        });
+      } catch (error) {
+        // Handles concurrent "add to cart" requests for same user/product.
+        if (error?.name === 'SequelizeUniqueConstraintError') {
+          const existing = await CartItem.findOne({ where: { userId: req.user.id, productId } });
+          if (existing) {
+            existing.quantity = Math.min(existing.quantity + normalizedQuantity, 10);
+            await existing.save();
+            cartItem = existing;
+          } else {
+            throw error;
+          }
+        } else {
+          throw error;
+        }
+      }
     }
 
     res.status(201).json(cartItem);
@@ -140,12 +156,26 @@ router.post('/merge', async (req, res) => {
         existing.quantity = Math.min(existing.quantity + clampedQty, 10);
         await existing.save();
       } else {
-        await CartItem.create({
-          userId: req.user.id,
-          productId,
-          quantity: clampedQty,
-          deliveryOptionId: '1',
-        });
+        try {
+          await CartItem.create({
+            userId: req.user.id,
+            productId,
+            quantity: clampedQty,
+            deliveryOptionId: '1',
+          });
+        } catch (error) {
+          if (error?.name === 'SequelizeUniqueConstraintError') {
+            const raceExisting = await CartItem.findOne({ where: { userId: req.user.id, productId } });
+            if (raceExisting) {
+              raceExisting.quantity = Math.min(raceExisting.quantity + clampedQty, 10);
+              await raceExisting.save();
+            } else {
+              throw error;
+            }
+          } else {
+            throw error;
+          }
+        }
       }
       merged += 1;
     }

@@ -21,6 +21,34 @@ export const Order = sequelize.define(
       type: DataTypes.UUID,
       allowNull: true,
     },
+    deliveryZone: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    deliveryAddress: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    shippingMethod: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      defaultValue: "standard",
+      validate: {
+        isIn: {
+          args: [["standard", "express"]],
+          msg: "Shipping method must be standard or express",
+        },
+      },
+      set(value) {
+        const normalized = String(value || "").toLowerCase();
+        this.setDataValue("shippingMethod", normalized === "express" ? "express" : "standard");
+      },
+    },
+    shippingMethodFeeCents: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0,
+    },
     products: {
       type: DataTypes.JSON,
       allowNull: false,
